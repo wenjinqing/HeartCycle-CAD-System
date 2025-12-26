@@ -1,0 +1,30 @@
+{
+  "name": "heartcycle-cad-frontend",
+  "version": "1.0.0",
+  "description": "HeartCycle 冠心病风险预测系统前端",
+  "private": true,
+  "scripts": {
+    "serve": "vue-cli-service serve",
+    "build": "vue-cli-service build",
+    "lint": "vue-cli-service lint",
+    "dev": "vue-cli-service serve --port 8080"
+  },
+  "dependencies": {
+    "vue": "^3.3.4",
+    "vue-router": "^4.2.5",
+    "axios": "^1.6.0",
+    "element-plus": "^2.4.4",
+    "echarts": "^5.4.3",
+    "vue-echarts": "^6.6.1",
+    "@element-plus/icons-vue": "^2.3.1"
+  },
+  "devDependencies": {
+    "@vue/cli-service": "^5.0.8",
+    "@vue/cli-plugin-router": "^5.0.8",
+    "@vue/cli-plugin-eslint": "^5.0.8",
+    "eslint": "^8.50.0",
+    "eslint-plugin-vue": "^9.18.1"
+  }
+}
+
+
