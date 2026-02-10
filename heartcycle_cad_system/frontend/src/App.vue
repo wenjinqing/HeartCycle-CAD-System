@@ -15,8 +15,14 @@
           >
             <el-menu-item index="/">首页</el-menu-item>
             <el-menu-item index="/monitor">监测分析</el-menu-item>
-            <el-menu-item index="/train">模型训练</el-menu-item>
+            <el-sub-menu index="/train">
+              <template #title>模型训练</template>
+              <el-menu-item index="/train-h5-auto">H5快速训练（推荐）</el-menu-item>
+              <el-menu-item index="/train">完整训练流程</el-menu-item>
+            </el-sub-menu>
+            <el-menu-item index="/batch-predict">批量预测</el-menu-item>
             <el-menu-item index="/history">历史记录</el-menu-item>
+            <el-menu-item index="/dashboard">性能监控</el-menu-item>
           </el-menu>
         </div>
       </el-header>

@@ -70,9 +70,10 @@ class ModelInfoResponse(BaseResponse):
     """模型信息响应"""
     model_id: str
     model_type: str
-    metrics: Dict[str, Any]
+    metrics: Optional[Dict[str, Any]] = None  # 改为可选，兼容旧模型
     feature_count: int
-    created_at: datetime
+    created_at: Optional[str] = None  # 改为可选，兼容旧模型
+    feature_file: Optional[str] = None  # 训练数据文件路径（用于SHAP全局解释）
 
 
 class PredictionResponse(BaseResponse):

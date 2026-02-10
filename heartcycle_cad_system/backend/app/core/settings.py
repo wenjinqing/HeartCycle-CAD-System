@@ -16,13 +16,6 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     SECRET_KEY: str = "your-secret-key-change-in-production"
     
-    # 数据库配置
-    DATABASE_URL: str = "sqlite:///./data/heartcycle.db"
-    
-    # Redis配置
-    REDIS_URL: str = "redis://localhost:6379/0"
-    REDIS_ENABLED: bool = False
-    
     # 文件路径
     # __file__ 是 backend/app/core/settings.py
     # .parent.parent.parent 是 backend 目录
@@ -37,14 +30,15 @@ class Settings(BaseSettings):
     RESULTS_DIR: str = "./results"
     LOGS_DIR: str = "./logs"
     
+    # 数据库配置
+    # SQLite: sqlite:///绝对路径（在model_post_init中设置为绝对路径）
+    # MySQL: mysql+pymysql://user:password@host:port/database
+    # PostgreSQL: postgresql://user:password@host:port/database
+    DATABASE_URL: str = "sqlite:///./data/heartcycle.db"  # 默认值，会在model_post_init中转换为绝对路径
+    
     # API配置
     API_V1_PREFIX: str = "/api/v1"
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:5173", "http://127.0.0.1:5173"]
-    
-    # Celery配置
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
-    CELERY_ENABLED: bool = False
     
     # 日志配置
     LOG_LEVEL: str = "INFO"
@@ -66,11 +60,17 @@ class Settings(BaseSettings):
     CACHE_TTL: int = 3600  # 1小时
     
     class Config:
-        env_file = ".env"
+
         case_sensitive = True
     
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def model_post_init(self, __context):
+        """在模型初始化后处理"""
+        super().model_post_init(__context)
+        # 如果DATABASE_URL是默认的相对路径，则使用绝对路径
+        if self.DATABASE_URL.startswith('sqlite:///./') or self.DATABASE_URL == "sqlite:///./data/heartcycle.db":
+            # 使用绝对路径设置SQLite数据库
+            db_path = str(self.BASE_DIR / "data" / "heartcycle.db")
+            object.__setattr__(self, 'DATABASE_URL', f"sqlite:///{db_path}")
         self._ensure_directories()
     
     def _ensure_directories(self):
@@ -81,11 +81,19 @@ class Settings(BaseSettings):
             self.FEATURES_DIR,
             self.MODELS_DIR,
             self.RESULTS_DIR,
-            self.LOGS_DIR
+            self.LOGS_DIR,
         ]
         
+        # 如果使用SQLite，确保数据库目录存在
+        if self.DATABASE_URL.startswith('sqlite:///'):
+            db_path = self.DATABASE_URL.replace('sqlite:///', '')
+            db_dir = os.path.dirname(db_path)
+            if db_dir:
+                directories.append(db_dir)
+        
         for directory in directories:
-            os.makedirs(directory, exist_ok=True)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
 
 
 # 创建配置实例

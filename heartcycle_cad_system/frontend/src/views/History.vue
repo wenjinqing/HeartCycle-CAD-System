@@ -1,6 +1,6 @@
 <template>
   <div class="history">
-    <el-card>
+    <el-card shadow="never">
       <template #header>
         <div class="card-header">
           <el-icon><Document /></el-icon>
@@ -41,6 +41,8 @@
         style="width: 100%"
         v-loading="loading"
         @selection-change="handleSelectionChange"
+        stripe
+        border
       >
         <el-table-column type="selection" width="55" />
         <el-table-column prop="id" label="索引" width="80" sortable>
@@ -109,6 +111,17 @@
       </el-table>
 
       <el-empty v-if="!loading && historyList.length === 0" description="暂无历史记录" />
+    </el-card>
+
+    <!-- 趋势分析图表 -->
+    <el-card v-if="historyList.length > 0" shadow="never" style="margin-top: 20px">
+      <template #header>
+        <div class="card-header">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>数据趋势分析</span>
+        </div>
+      </template>
+      <div ref="trendChartRef" style="width: 100%; height: 400px; padding: 10px;"></div>
     </el-card>
 
     <!-- 详情对话框 -->
@@ -184,10 +197,11 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
-import { Document, Delete, DeleteFilled, Refresh, View as ViewIcon } from '@element-plus/icons-vue'
+import { ref, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
+import { Document, Delete, DeleteFilled, Refresh, View as ViewIcon, DataAnalysis } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { storage } from '../utils/storage'
+import * as echarts from 'echarts'
 
 export default {
   name: 'History',
@@ -196,7 +210,8 @@ export default {
     Delete,
     DeleteFilled,
     Refresh,
-    ViewIcon
+    ViewIcon,
+    DataAnalysis
   },
   setup() {
     const loading = ref(false)
@@ -204,6 +219,8 @@ export default {
     const detailVisible = ref(false)
     const currentDetail = ref(null)
     const selectedRows = ref([])
+    const trendChartRef = ref(null)
+    let trendChart = null
 
     // 从localStorage加载历史记录
     const loadHistory = () => {
@@ -335,8 +352,183 @@ export default {
       }
     }
 
+    // 初始化趋势图表
+    const initTrendChart = () => {
+      if (!trendChartRef.value || historyList.value.length === 0) return
+
+      if (trendChart) {
+        trendChart.dispose()
+      }
+
+      trendChart = echarts.init(trendChartRef.value)
+
+      // 准备数据 - 按时间排序
+      const sortedData = [...historyList.value].sort((a, b) => {
+        const timeA = a.timestamp || new Date(a.date || 0).getTime()
+        const timeB = b.timestamp || new Date(b.date || 0).getTime()
+        return timeA - timeB
+      })
+
+      const dates = sortedData.map(item => {
+        const timestamp = item.timestamp || new Date(item.date || 0).getTime()
+        const date = new Date(timestamp)
+        return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+      })
+
+      const riskScores = sortedData.map(item => parseFloat(item.riskScore) || 0)
+      const predictions = sortedData.map(item => item.prediction === 1 ? 1 : 0)
+
+      const option = {
+        title: {
+          text: '风险评分趋势',
+          left: 'center',
+          textStyle: {
+            fontSize: 18,
+            fontWeight: 'bold'
+          }
+        },
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: {
+            type: 'cross'
+          },
+          formatter: (params) => {
+            let result = `<div style="padding: 5px;">
+              <div style="font-weight: bold; margin-bottom: 5px;">${params[0].axisValue}</div>`
+            params.forEach(param => {
+              const value = param.value
+              const unit = param.seriesName === '风险评分' ? '%' : ''
+              const color = param.color
+              result += `<div style="margin-top: 3px;">
+                <span style="display: inline-block; width: 10px; height: 10px; background-color: ${color}; margin-right: 5px;"></span>
+                ${param.seriesName}: <span style="color: ${color}; font-weight: bold;">${value.toFixed(1)}${unit}</span>
+              </div>`
+            })
+            result += '</div>'
+            return result
+          }
+        },
+        legend: {
+          data: ['风险评分', '预测结果'],
+          top: 35
+        },
+        grid: {
+          left: '3%',
+          right: '4%',
+          bottom: '3%',
+          top: '15%',
+          containLabel: true
+        },
+        xAxis: {
+          type: 'category',
+          boundaryGap: false,
+          data: dates,
+          axisLabel: {
+            rotate: 45,
+            fontSize: 11
+          }
+        },
+        yAxis: [
+          {
+            type: 'value',
+            name: '风险评分 (%)',
+            min: 0,
+            max: 100,
+            position: 'left',
+            axisLabel: {
+              formatter: '{value}%'
+            },
+            splitLine: {
+              show: true,
+              lineStyle: {
+                type: 'dashed'
+              }
+            }
+          },
+          {
+            type: 'value',
+            name: '预测结果',
+            min: 0,
+            max: 1,
+            position: 'right',
+            axisLabel: {
+              formatter: (value) => value === 0 ? '低风险' : value === 1 ? '高风险' : ''
+            }
+          }
+        ],
+        series: [
+          {
+            name: '风险评分',
+            type: 'line',
+            smooth: true,
+            data: riskScores,
+            itemStyle: {
+              color: '#5470c6'
+            },
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: 'rgba(84, 112, 198, 0.3)' },
+                { offset: 1, color: 'rgba(84, 112, 198, 0.1)' }
+              ])
+            },
+            markLine: {
+              data: [
+                { yAxis: 30, name: '低风险阈值', lineStyle: { color: '#67c23a', type: 'dashed' } },
+                { yAxis: 60, name: '中风险阈值', lineStyle: { color: '#e6a23c', type: 'dashed' } }
+              ],
+              label: {
+                formatter: '{b}'
+              }
+            }
+          },
+          {
+            name: '预测结果',
+            type: 'scatter',
+            yAxisIndex: 1,
+            data: predictions.map((pred, index) => [index, pred]),
+            symbolSize: 8,
+            itemStyle: {
+              color: (params) => {
+                return params.value[1] === 1 ? '#f56c6c' : '#67c23a'
+              }
+            }
+          }
+        ]
+      }
+
+      trendChart.setOption(option)
+
+      // 响应式调整
+      window.addEventListener('resize', () => {
+        if (trendChart) {
+          trendChart.resize()
+        }
+      })
+    }
+
+    // 监听历史记录变化，更新图表
+    watch(
+      () => historyList.value,
+      () => {
+        nextTick(() => {
+          initTrendChart()
+        })
+      },
+      { deep: true }
+    )
+
     onMounted(() => {
       loadHistory()
+      nextTick(() => {
+        initTrendChart()
+      })
+    })
+
+    onBeforeUnmount(() => {
+      if (trendChart) {
+        trendChart.dispose()
+        trendChart = null
+      }
     })
 
     return {
@@ -345,6 +537,7 @@ export default {
       detailVisible,
       currentDetail,
       selectedRows,
+      trendChartRef,
       getRiskType,
       formatTimestamp,
       viewDetail,
@@ -360,26 +553,102 @@ export default {
 
 <style scoped>
 .history {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
+  padding: 20px;
 }
 
 .card-header {
   display: flex;
   align-items: center;
   font-size: 18px;
-  font-weight: bold;
+  font-weight: 600;
+  color: #303133;
 }
 
 .card-header .el-icon {
-  margin-right: 8px;
+  margin-right: 10px;
   font-size: 24px;
   color: #409eff;
 }
 
-.history {
-  max-width: 1400px;
-  margin: 0 auto;
+:deep(.el-card) {
+  border-radius: 12px;
+}
+
+:deep(.el-card__header) {
+  padding: 20px 24px;
+  border-bottom: 1px solid #f0f2f5;
+  background: #fafbfc;
+}
+
+:deep(.el-tabs__header) {
+  margin: 0;
+  background: #fff;
+  border-radius: 8px;
+}
+
+:deep(.el-tabs__nav-wrap) {
+  padding: 0 24px;
+}
+
+:deep(.el-tabs__item) {
+  font-weight: 500;
+  padding: 0 24px;
+  height: 50px;
+  line-height: 50px;
+}
+
+:deep(.el-table) {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+:deep(.el-table__header) {
+  background: #fafbfc;
+}
+
+:deep(.el-table th) {
+  background: #fafbfc !important;
+  font-weight: 600;
+  color: #606266;
+  border-bottom: 2px solid #e4e7ed;
+}
+
+:deep(.el-table td) {
+  border-bottom: 1px solid #f0f2f5;
+}
+
+:deep(.el-table__row:hover) {
+  background: #f5f7fa;
+}
+
+:deep(.el-button) {
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+:deep(.el-button--small) {
+  padding: 8px 15px;
+}
+
+:deep(.el-tag) {
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+:deep(.el-dialog) {
+  border-radius: 12px;
+}
+
+:deep(.el-dialog__header) {
+  padding: 24px 24px 20px;
+  border-bottom: 1px solid #f0f2f5;
+  background: #fafbfc;
+}
+
+:deep(.el-dialog__body) {
+  padding: 24px;
 }
 </style>
 

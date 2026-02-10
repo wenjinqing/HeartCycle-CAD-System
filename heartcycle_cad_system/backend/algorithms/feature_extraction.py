@@ -60,6 +60,35 @@ class HRVFeatureExtractor:
             features['pnn50'] = np.sum(np.abs(diff_rr) > 50) / len(diff_rr) * 100
         else:
             features['pnn50'] = 0.0
+
+        # pNN20: 相邻RR间期差值超过20ms的比例
+        if len(diff_rr) > 0:
+            features['pnn20'] = np.sum(np.abs(diff_rr) > 20) / len(diff_rr) * 100
+        else:
+            features['pnn20'] = 0.0
+
+        # CV: 变异系数 (Coefficient of Variation)
+        if features['mean_rr'] > 0:
+            features['cv'] = (features['std_rr'] / features['mean_rr']) * 100
+        else:
+            features['cv'] = 0.0
+
+        # CVSD: 连续差值的变异系数
+        if len(diff_rr) > 0 and np.mean(np.abs(diff_rr)) > 0:
+            features['cvsd'] = (np.std(diff_rr) / np.mean(np.abs(diff_rr))) * 100
+        else:
+            features['cvsd'] = 0.0
+
+        # SDANN: 5分钟段平均RR间期的标准差（简化版：使用整体数据）
+        features['sdann'] = features['std_rr']
+
+        # 范围特征
+        features['range_rr'] = features['max_rr'] - features['min_rr']
+
+        # 四分位数
+        features['q1_rr'] = np.percentile(rr_intervals, 25)
+        features['q3_rr'] = np.percentile(rr_intervals, 75)
+        features['iqr_rr'] = features['q3_rr'] - features['q1_rr']
         
         # SDSD: 连续RR间期差值的标准差
         features['sdsd'] = np.std(diff_rr) if len(diff_rr) > 0 else 0.0
@@ -168,7 +197,30 @@ class HRVFeatureExtractor:
             features['vlf_percent'] = 0.0
             features['lf_percent'] = 0.0
             features['hf_percent'] = 0.0
-        
+
+        # 峰值频率
+        if len(psd[lf_idx]) > 0:
+            features['lf_peak'] = freqs[lf_idx][np.argmax(psd[lf_idx])]
+        else:
+            features['lf_peak'] = 0.0
+
+        if len(psd[hf_idx]) > 0:
+            features['hf_peak'] = freqs[hf_idx][np.argmax(psd[hf_idx])]
+        else:
+            features['hf_peak'] = 0.0
+
+        # 总功率的对数
+        features['log_total_power'] = np.log(total_power + 1e-10)
+        features['log_lf_power'] = np.log(lf_power + 1e-10)
+        features['log_hf_power'] = np.log(hf_power + 1e-10)
+
+        # 频谱熵
+        if total_power > 0:
+            psd_norm = psd / np.sum(psd)
+            features['spectral_entropy'] = -np.sum(psd_norm * np.log(psd_norm + 1e-10))
+        else:
+            features['spectral_entropy'] = 0.0
+
         return features
     
     def extract_nonlinear_features(self, rr_intervals: np.ndarray) -> Dict[str, float]:
@@ -215,7 +267,18 @@ class HRVFeatureExtractor:
         
         # Approximate Entropy（简化版）
         features['approximate_entropy'] = self._approximate_entropy(rr_intervals, m=2, r=0.2)
-        
+
+        # DFA (Detrended Fluctuation Analysis) - 简化版
+        features['dfa_alpha1'] = self._dfa(rr_intervals, scale_min=4, scale_max=16)
+        features['dfa_alpha2'] = self._dfa(rr_intervals, scale_min=16, scale_max=64)
+
+        # 心率加速度和减速度能力
+        features['ac'] = self._acceleration_capacity(rr_intervals)
+        features['dc'] = self._deceleration_capacity(rr_intervals)
+
+        # 复杂度指数
+        features['complexity_index'] = self._complexity_index(rr_intervals)
+
         return features
     
     def _sample_entropy(self, data: np.ndarray, m: int = 2, r: float = 0.2) -> float:
@@ -275,7 +338,134 @@ class HRVFeatureExtractor:
             return phi_m - phi_m1
         except:
             return 0.0
-    
+
+    def _dfa(self, data: np.ndarray, scale_min: int = 4, scale_max: int = 16) -> float:
+        """
+        去趋势波动分析 (Detrended Fluctuation Analysis)
+        简化实现，计算短期或长期的DFA指数
+        """
+        N = len(data)
+        if N < scale_max:
+            return 0.0
+
+        try:
+            # 计算累积和
+            y = np.cumsum(data - np.mean(data))
+
+            # 在不同尺度上计算波动
+            scales = np.arange(scale_min, min(scale_max, N // 4), 2)
+            fluctuations = []
+
+            for scale in scales:
+                # 将数据分段
+                n_segments = N // scale
+                if n_segments < 1:
+                    continue
+
+                F_n = 0
+                for i in range(n_segments):
+                    segment = y[i * scale:(i + 1) * scale]
+                    # 线性拟合
+                    x = np.arange(len(segment))
+                    coeffs = np.polyfit(x, segment, 1)
+                    fit = np.polyval(coeffs, x)
+                    # 计算波动
+                    F_n += np.sum((segment - fit) ** 2)
+
+                F_n = np.sqrt(F_n / (n_segments * scale))
+                fluctuations.append(F_n)
+
+            if len(fluctuations) < 2:
+                return 0.0
+
+            # 对log(F(n))和log(n)进行线性拟合，斜率即为DFA指数
+            log_scales = np.log(scales[:len(fluctuations)])
+            log_fluctuations = np.log(fluctuations)
+            alpha = np.polyfit(log_scales, log_fluctuations, 1)[0]
+
+            return float(alpha)
+        except:
+            return 0.0
+
+    def _acceleration_capacity(self, rr_intervals: np.ndarray) -> float:
+        """
+        计算加速度能力 (Acceleration Capacity)
+        衡量心率加速的能力
+        """
+        if len(rr_intervals) < 5:
+            return 0.0
+
+        try:
+            # 计算相位整流信号
+            X = []
+            for i in range(2, len(rr_intervals) - 2):
+                # 取当前点及其前后各2个点
+                anchor = rr_intervals[i]
+                neighbors = [rr_intervals[i - 2], rr_intervals[i - 1],
+                           rr_intervals[i + 1], rr_intervals[i + 2]]
+                # 加速度：RR间期减小
+                if anchor < np.mean(neighbors):
+                    X.append(anchor)
+
+            if len(X) == 0:
+                return 0.0
+
+            return float(np.mean(X))
+        except:
+            return 0.0
+
+    def _deceleration_capacity(self, rr_intervals: np.ndarray) -> float:
+        """
+        计算减速度能力 (Deceleration Capacity)
+        衡量心率减速的能力
+        """
+        if len(rr_intervals) < 5:
+            return 0.0
+
+        try:
+            # 计算相位整流信号
+            X = []
+            for i in range(2, len(rr_intervals) - 2):
+                # 取当前点及其前后各2个点
+                anchor = rr_intervals[i]
+                neighbors = [rr_intervals[i - 2], rr_intervals[i - 1],
+                           rr_intervals[i + 1], rr_intervals[i + 2]]
+                # 减速度：RR间期增大
+                if anchor > np.mean(neighbors):
+                    X.append(anchor)
+
+            if len(X) == 0:
+                return 0.0
+
+            return float(np.mean(X))
+        except:
+            return 0.0
+
+    def _complexity_index(self, rr_intervals: np.ndarray) -> float:
+        """
+        计算复杂度指数
+        基于RR间期序列的变化模式
+        """
+        if len(rr_intervals) < 10:
+            return 0.0
+
+        try:
+            # 计算连续差值
+            diff = np.diff(rr_intervals)
+
+            # 统计符号变化次数（方向改变）
+            sign_changes = 0
+            for i in range(len(diff) - 1):
+                if diff[i] * diff[i + 1] < 0:  # 符号相反
+                    sign_changes += 1
+
+            # 复杂度指数：符号变化次数与总长度的比值
+            complexity = sign_changes / (len(diff) - 1) if len(diff) > 1 else 0.0
+
+            return float(complexity)
+        except:
+            return 0.0
+
     def extract_clinical_features(self, subject_metadata: Dict) -> Dict[str, float]:
         """
         提取临床特征
@@ -328,26 +518,75 @@ class HRVFeatureExtractor:
         features : dict
             所有特征的字典
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         all_features = {}
         
-        # 1. 数据预处理，获取RR间期
-        processed_data = self.processor.process_file(file_path, use_existing_rpeaks)
-        rr_intervals = processed_data['rr_intervals']
-        
-        # 2. 提取HRV特征
-        if extract_hrv and len(rr_intervals) > 5:
-            time_features = self.extract_time_domain_features(rr_intervals)
-            freq_features = self.extract_frequency_domain_features(rr_intervals)
-            nonlinear_features = self.extract_nonlinear_features(rr_intervals)
+        try:
+            # 1. 数据预处理，获取RR间期
+            logger.info(f"开始处理文件: {file_path}")
+            processed_data = self.processor.process_file(file_path, use_existing_rpeaks)
+            rr_intervals = processed_data['rr_intervals']
             
-            all_features.update(time_features)
-            all_features.update(freq_features)
-            all_features.update(nonlinear_features)
-        
-        # 3. 提取临床特征
-        if extract_clinical and subject_metadata:
-            clinical_features = self.extract_clinical_features(subject_metadata)
-            all_features.update(clinical_features)
+            logger.info(f"提取到 {len(rr_intervals)} 个RR间期")
+            
+            if len(rr_intervals) == 0:
+                raise ValueError(f"未能从文件 {file_path} 中提取到RR间期，请检查文件格式是否正确")
+            
+            # 2. 提取HRV特征
+            if extract_hrv:
+                if len(rr_intervals) <= 5:
+                    logger.warning(f"RR间期数量过少（{len(rr_intervals)}），可能影响特征提取质量")
+                    # 即使数量少也尝试提取，但使用更宽松的条件
+                
+                # 提取时域特征（即使RR间期少也提取基本特征）
+                time_features = self.extract_time_domain_features(rr_intervals)
+                all_features.update(time_features)
+                
+                # 频域和非线性特征需要更多数据
+                if len(rr_intervals) > 5:
+                    freq_features = self.extract_frequency_domain_features(rr_intervals)
+                    nonlinear_features = self.extract_nonlinear_features(rr_intervals)
+                    all_features.update(freq_features)
+                    all_features.update(nonlinear_features)
+                else:
+                    logger.warning(f"RR间期数量过少（{len(rr_intervals)}），跳过频域和非线性特征提取")
+                    # 为缺失的特征设置默认值
+                    all_features.update({
+                        'total_power': 0.0,
+                        'vlf_power': 0.0,
+                        'lf_power': 0.0,
+                        'hf_power': 0.0,
+                        'lf_hf_ratio': 0.0,
+                        'sd1': 0.0,
+                        'sd2': 0.0,
+                        'sd1_sd2_ratio': 0.0,
+                        'sample_entropy': 0.0,
+                        'approximate_entropy': 0.0
+                    })
+            else:
+                logger.info("跳过HRV特征提取")
+            
+            # 3. 提取临床特征
+            if extract_clinical:
+                if subject_metadata:
+                    clinical_features = self.extract_clinical_features(subject_metadata)
+                    all_features.update(clinical_features)
+                    logger.info("已提取临床特征")
+                else:
+                    logger.warning("请求提取临床特征但未提供subject_metadata，跳过临床特征提取")
+            else:
+                logger.info("跳过临床特征提取")
+            
+            logger.info(f"特征提取完成，共提取 {len(all_features)} 个特征")
+            
+            if len(all_features) == 0:
+                raise ValueError("未能提取到任何特征，请检查文件格式和提取参数")
+            
+        except Exception as e:
+            logger.error(f"特征提取失败: {str(e)}")
+            raise
         
         return all_features
 

@@ -5,7 +5,6 @@ scipy>=1.9.0
 h5py>=3.8.0
 
 # 信号处理与特征提取
-scikit-learn>=1.2.0
 neurokit2>=0.2.0
 PyWavelets>=1.4.0
 
@@ -32,13 +31,11 @@ python-dotenv>=1.0.0
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
 
-# 异步任务
-celery>=5.3.0
-redis>=4.6.0
-
 # 数据库
 sqlalchemy>=2.0.0
 alembic>=1.11.0
+pymysql>=1.1.0  # MySQL驱动
+cryptography>=41.0.0  # MySQL加密支持
 
 # 可视化
 matplotlib>=3.7.0
@@ -50,4 +47,11 @@ tqdm>=4.65.0
 pyyaml>=6.0
 openpyxl>=3.1.0
 joblib>=1.2.0  # 模型保存和加载
+psutil>=5.9.0  # 系统监控
+
+# 测试
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+httpx>=0.24.0  # FastAPI测试客户端依赖
 

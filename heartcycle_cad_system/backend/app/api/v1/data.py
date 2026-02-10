@@ -4,10 +4,11 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from typing import List
 import os
+from pathlib import Path
 from app.core.config import settings
 from app.core.logger import logger
 from app.models.response import FileUploadResponse, FileListResponse, BaseResponse
-from app.core.utils import validate_file_path
+from app.core.utils import validate_file_path, ensure_dir
 
 router = APIRouter()
 
@@ -37,7 +38,7 @@ async def upload_file(file: UploadFile = File(...)):
         
         # 保存文件
         file_path = os.path.join(settings.UPLOAD_DIR, file.filename)
-        os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+        ensure_dir(file_path)  # 确保目录存在
         
         with open(file_path, "wb") as f:
             content = await file.read()
@@ -115,4 +116,84 @@ async def get_file_info(filename: str):
         "path": file_path,
         "size": file_size
     }
+
+
+@router.post("/upload-h5-batch")
+async def upload_h5_batch(files: List[UploadFile] = File(...)):
+    """
+    批量上传H5文件到指定目录
+    
+    Parameters:
+    -----------
+    files : List[UploadFile]
+        上传的H5文件列表
+        
+    Returns:
+    --------
+    dict : 上传结果，包含目录路径
+    """
+    try:
+        if not files:
+            raise HTTPException(status_code=400, detail="请至少选择一个文件")
+        
+        # 创建专门的H5数据目录
+        import uuid
+        import shutil
+        batch_id = str(uuid.uuid4())[:8]
+        h5_data_dir = os.path.join(settings.UPLOAD_DIR, 'h5_batch', batch_id)
+        ensure_dir(os.path.join(h5_data_dir, '.keep'))  # 确保目录存在
+        
+        uploaded_files = []
+        total_size = 0
+        
+        for file in files:
+            # 检查文件类型
+            if not file.filename:
+                continue
+                
+            file_ext = os.path.splitext(file.filename)[1].lower()
+            if file_ext != '.h5':
+                logger.warning(f"跳过非H5文件: {file.filename}")
+                continue
+            
+            # 保存文件
+            file_path = os.path.join(h5_data_dir, file.filename)
+            content = await file.read()
+            
+            with open(file_path, "wb") as f:
+                f.write(content)
+            
+            file_size = len(content)
+            total_size += file_size
+            uploaded_files.append({
+                "filename": file.filename,
+                "size": file_size,
+                "path": file_path
+            })
+            
+            logger.info(f"H5文件上传成功: {file.filename}, 大小: {file_size} bytes")
+        
+        if not uploaded_files:
+            # 如果没有任何H5文件上传成功，删除目录
+            shutil.rmtree(h5_data_dir, ignore_errors=True)
+            raise HTTPException(status_code=400, detail="没有有效的H5文件上传")
+        
+        logger.info(f"批量上传完成: {len(uploaded_files)} 个H5文件, 总大小: {total_size} bytes, 目录: {h5_data_dir}")
+        
+        return {
+            "success": True,
+            "message": f"成功上传 {len(uploaded_files)} 个H5文件",
+            "data": {
+                "data_dir": h5_data_dir,
+                "batch_id": batch_id,
+                "file_count": len(uploaded_files),
+                "total_size": total_size,
+                "files": uploaded_files
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"批量上传H5文件失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"批量上传失败: {str(e)}")
 

@@ -4,18 +4,51 @@
 """
 import sys
 import os
+from pathlib import Path
+from typing import Optional, Tuple
+
 import numpy as np
 import pandas as pd
 
 # 添加backend目录到路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
+backend_dir = Path(__file__).parent.parent / 'backend'
+sys.path.insert(0, str(backend_dir))
 
 
-def create_dummy_data():
+def create_dummy_data() -> Tuple[str, str]:
     """创建示例数据用于训练"""
     print("正在生成示例训练数据...")
     
-    # 生成示例数据
+    # 使用generate_training_data生成数据
+    try:
+        # 导入同目录下的generate_training_data模块
+        script_dir = Path(__file__).parent
+        if str(script_dir) not in sys.path:
+            sys.path.insert(0, str(script_dir))
+        
+        from generate_training_data import generate_training_data
+        
+        output_dir = script_dir.parent / 'data' / 'features'
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        features_file, labels_file = generate_training_data(
+            n_samples=200,
+            output_dir=str(output_dir)
+        )
+        
+        print(f"\n示例数据已保存:")
+        print(f"  特征文件: {features_file}")
+        print(f"  标签文件: {labels_file}")
+        
+        return features_file, labels_file
+        
+    except (ImportError, Exception) as e:
+        print(f"警告: 无法使用generate_training_data ({e})，使用简单的随机数据生成方法")
+        return _create_simple_dummy_data()
+
+
+def _create_simple_dummy_data() -> Tuple[str, str]:
+    """创建简单的示例数据（备用方法）"""
     n_samples = 200
     n_features = 10  # 5个临床特征 + 5个HRV特征
     
@@ -24,8 +57,6 @@ def create_dummy_data():
     X = np.random.rand(n_samples, n_features)
     
     # 生成标签（模拟二分类问题）
-    # 基于某些特征的组合来生成合理的标签
-    y = ((X[:, 0] > 0.5) | (X[:, 5] > 0.6)).astype(int)
     y = np.random.binomial(1, 0.3 + 0.4 * X[:, 0], n_samples)  # 更真实的标签分布
     
     # 创建DataFrame
@@ -38,10 +69,11 @@ def create_dummy_data():
     df_labels = pd.DataFrame(y, columns=['label'])
     
     # 保存到文件
-    features_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'features', 'train_features.csv')
-    labels_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'features', 'train_labels.csv')
+    script_dir = Path(__file__).parent
+    features_file = script_dir.parent / 'data' / 'features' / 'train_features.csv'
+    labels_file = script_dir.parent / 'data' / 'features' / 'train_labels.csv'
     
-    os.makedirs(os.path.dirname(features_file), exist_ok=True)
+    features_file.parent.mkdir(parents=True, exist_ok=True)
     
     df_features.to_csv(features_file, index=False)
     df_labels.to_csv(labels_file, index=False)
@@ -51,25 +83,29 @@ def create_dummy_data():
     print(f"  标签文件: {labels_file}")
     print(f"  样本数: {n_samples}, 特征数: {n_features}")
     
-    return features_file, labels_file
+    return str(features_file), str(labels_file)
 
 
-def train_via_api(features_file, labels_file):
+def train_via_api(features_file: str, labels_file: str) -> Optional[str]:
     """通过API训练模型"""
     try:
         import requests
-        
-        print("\n通过API训练模型...")
-        
-        # 检查服务是否运行
-        try:
-            response = requests.get("http://localhost:8000/health", timeout=2)
-            if response.status_code != 200:
-                print("后端服务未运行，请先启动后端: python scripts/start_backend.py")
-                return None
-        except:
+    except ImportError:
+        print("\nrequests库未安装，跳过API训练")
+        print("安装: pip install requests")
+        return None
+    
+    print("\n通过API训练模型...")
+    
+    # 检查服务是否运行
+    try:
+        response = requests.get("http://localhost:8000/health", timeout=2)
+        if response.status_code != 200:
             print("后端服务未运行，请先启动后端: python scripts/start_backend.py")
             return None
+    except (requests.RequestException, ConnectionError):
+        print("后端服务未运行，请先启动后端: python scripts/start_backend.py")
+        return None
         
         # 训练模型
         response = requests.post(
@@ -110,16 +146,12 @@ def train_via_api(features_file, labels_file):
             print(response.text)
             return None
             
-    except ImportError:
-        print("\nrequests库未安装，跳过API训练")
-        print("安装: pip install requests")
-        return None
     except Exception as e:
         print(f"\nAPI训练失败: {e}")
         return None
 
 
-def train_via_code(features_file, labels_file):
+def train_via_code(features_file: str, labels_file: str) -> Optional[str]:
     """直接使用代码训练模型"""
     print("\n直接使用代码训练模型...")
     
@@ -127,8 +159,16 @@ def train_via_code(features_file, labels_file):
         from algorithms.model_training import ModelTrainer
         
         # 加载数据
-        df_features = pd.read_csv(features_file)
-        df_labels = pd.read_csv(labels_file)
+        features_path = Path(features_file)
+        labels_path = Path(labels_file)
+        
+        if not features_path.exists():
+            raise FileNotFoundError(f"特征文件不存在: {features_file}")
+        if not labels_path.exists():
+            raise FileNotFoundError(f"标签文件不存在: {labels_file}")
+        
+        df_features = pd.read_csv(features_path)
+        df_labels = pd.read_csv(labels_path)
         
         X = df_features.values
         y = df_labels.values.ravel()
@@ -183,8 +223,8 @@ def main():
     features_file, labels_file = create_dummy_data()
     
     # 转换为绝对路径
-    features_file = os.path.abspath(features_file)
-    labels_file = os.path.abspath(labels_file)
+    features_file = str(Path(features_file).absolute())
+    labels_file = str(Path(labels_file).absolute())
     
     print(f"\n使用以下文件训练模型:")
     print(f"  特征: {features_file}")

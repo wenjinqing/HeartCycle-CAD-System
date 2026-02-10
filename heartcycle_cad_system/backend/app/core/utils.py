@@ -261,3 +261,127 @@ def format_error_message(error: Exception) -> str:
     return f"{error_type}: {error_msg}"
 
 
+def handle_api_error(error: Exception, default_message: str = "操作失败"):
+    """
+    统一处理API错误，转换为HTTPException
+    
+    Parameters:
+    -----------
+    error : Exception
+        异常对象
+    default_message : str
+        默认错误消息
+        
+    Returns:
+    --------
+    HTTPException : HTTP异常对象
+    """
+    from fastapi import HTTPException
+    from app.core.logger import logger
+    
+    # 如果已经是HTTPException，直接返回
+    if isinstance(error, HTTPException):
+        return error
+    
+    # 记录错误日志
+    logger.error(f"{default_message}: {str(error)}", exc_info=True)
+    
+    # 根据错误类型返回适当的HTTP状态码
+    error_msg = str(error)
+    if isinstance(error, FileNotFoundError):
+        return HTTPException(status_code=404, detail=f"文件未找到: {error_msg}")
+    elif isinstance(error, ValueError):
+        return HTTPException(status_code=400, detail=f"参数错误: {error_msg}")
+    elif isinstance(error, PermissionError):
+        return HTTPException(status_code=403, detail=f"权限不足: {error_msg}")
+    else:
+        return HTTPException(status_code=500, detail=f"{default_message}: {error_msg}")
+
+
+def normalize_file_path(file_path: str, is_directory: bool = False) -> str:
+    """
+    规范化文件或目录路径
+    
+    处理相对路径、绝对路径，支持以下路径格式：
+    1. 绝对路径（直接使用）
+    2. 相对于项目根目录的路径（如 data/features/train_features.csv）
+    3. 上传目录中的文件（data/raw/xxx.csv）
+    4. 包含 .. 的相对路径（规范化处理）
+    
+    Parameters:
+    -----------
+    file_path : str
+        文件或目录路径
+    is_directory : bool
+        是否为目录路径（默认为False，即文件路径）
+        
+    Returns:
+    --------
+    str : 规范化的绝对路径
+    """
+    from app.core.logger import logger
+    
+    if not file_path:
+        raise ValueError("路径不能为空")
+    
+    # 规范化路径（移除 .. 和 .，转换为标准路径）
+    normalized = os.path.normpath(file_path)
+    
+    # 如果已经是绝对路径且存在，直接返回
+    if os.path.isabs(normalized):
+        if (is_directory and os.path.isdir(normalized)) or (not is_directory and os.path.isfile(normalized)):
+            return normalized
+        elif os.path.exists(normalized):
+            return normalized
+    
+    # 提取文件名或目录名（用于在多个目录中查找）
+    basename = os.path.basename(normalized) if not is_directory else normalized
+    
+    # 尝试多个可能的路径
+    search_paths = []
+    
+    # 1. 如果是绝对路径但不存在，尝试移除多余的部分
+    if os.path.isabs(normalized):
+        search_paths.append(normalized)
+        if not is_directory:
+            search_paths.append(basename)
+    
+    # 2. 相对于项目根目录
+    base_path = os.path.join(settings.BASE_DIR, normalized)
+    search_paths.append(base_path)
+    
+    # 3. 如果是相对路径，尝试直接使用
+    if not os.path.isabs(normalized):
+        search_paths.append(normalized)
+    
+    # 4. 在上传目录中查找（只使用文件名）
+    if not is_directory:
+        upload_path = os.path.join(settings.UPLOAD_DIR, basename)
+        search_paths.append(upload_path)
+        
+        # 5. 在特征目录中查找（只使用文件名）
+        features_path = os.path.join(settings.FEATURES_DIR, basename)
+        search_paths.append(features_path)
+    
+    # 6. 尝试从当前工作目录解析
+    if os.path.exists(normalized):
+        search_paths.append(os.path.abspath(normalized))
+    
+    # 遍历所有可能的路径，找到存在的文件或目录
+    for path in search_paths:
+        abs_path = os.path.abspath(path) if not os.path.isabs(path) else path
+        if is_directory:
+            if os.path.exists(abs_path) and os.path.isdir(abs_path):
+                logger.debug(f"找到目录: {abs_path} (原始路径: {file_path})")
+                return abs_path
+        else:
+            if os.path.exists(abs_path) and os.path.isfile(abs_path):
+                logger.debug(f"找到文件: {abs_path} (原始路径: {file_path})")
+                return abs_path
+    
+    # 如果所有尝试都失败，返回规范化后的绝对路径（让后续代码抛出错误）
+    final_path = os.path.abspath(normalized) if not os.path.isabs(normalized) else normalized
+    logger.warning(f"无法找到{'目录' if is_directory else '文件'}: {file_path} (规范化后: {final_path})")
+    return final_path
+
+

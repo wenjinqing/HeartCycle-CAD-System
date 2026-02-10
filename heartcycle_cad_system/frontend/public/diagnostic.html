@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API诊断工具</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #4ec9b0;
+        }
+        .test-section {
+            background: #252526;
+            border: 1px solid #3c3c3c;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .test-title {
+            color: #4fc1ff;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #1e3a1e;
+            border-left: 4px solid #4ec9b0;
+        }
+        .error {
+            background: #3a1e1e;
+            border-left: 4px solid #f48771;
+        }
+        .info {
+            background: #1e2a3a;
+            border-left: 4px solid #4fc1ff;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        pre {
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .port-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #0e639c;
+            border-radius: 4px;
+            margin: 0 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 HeartCycle API 诊断工具</h1>
+
+        <div class="test-section">
+            <div class="test-title">1. 端口扫描</div>
+            <button onclick="scanPorts()">扫描后端端口 (8000-8010)</button>
+            <div id="port-results"></div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">2. 测试上传API</div>
+            <div>
+                <label>选择端口：</label>
+                <input type="number" id="test-port" value="8004" style="width: 80px; padding: 5px;">
+                <button onclick="testUploadEndpoint()">测试 /api/v1/upload</button>
+            </div>
+            <div id="upload-results"></div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">3. 前端API配置检查</div>
+            <button onclick="checkFrontendConfig()">检查前端配置</button>
+            <div id="config-results"></div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">4. CORS 测试</div>
+            <button onclick="testCORS()">测试跨域请求</button>
+            <div id="cors-results"></div>
+        </div>
+    </div>
+
+    <script>
+        async function scanPorts() {
+            const resultsDiv = document.getElementById('port-results');
+            resultsDiv.innerHTML = '<div class="info">正在扫描...</div>';
+
+            const results = [];
+            for (let port = 8000; port <= 8010; port++) {
+                try {
+                    const response = await fetch(`http://localhost:${port}/health`, {
+                        method: 'GET',
+                        signal: AbortSignal.timeout(2000)
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        results.push({
+                            port,
+                            status: '✅ 在线',
+                            version: data.version,
+                            data
+                        });
+                    }
+                } catch (error) {
+                    // 端口不可用，跳过
+                }
+            }
+
+            if (results.length === 0) {
+                resultsDiv.innerHTML = '<div class="error">❌ 未找到运行中的后端服务</div>';
+            } else {
+                resultsDiv.innerHTML = results.map(r => `
+                    <div class="success">
+                        <strong>端口 <span class="port-badge">${r.port}</span></strong> ${r.status}<br>
+                        版本: ${r.version}<br>
+                        <details>
+                            <summary>详细信息</summary>
+                            <pre>${JSON.stringify(r.data, null, 2)}</pre>
+                        </details>
+                    </div>
+                `).join('');
+            }
+        }
+
+        async function testUploadEndpoint() {
+            const port = document.getElementById('test-port').value;
+            const resultsDiv = document.getElementById('upload-results');
+            resultsDiv.innerHTML = '<div class="info">正在测试...</div>';
+
+            try {
+                // 测试OPTIONS预检请求
+                const optionsResponse = await fetch(`http://localhost:${port}/api/v1/upload`, {
+                    method: 'OPTIONS'
+                });
+
+                resultsDiv.innerHTML = `
+                    <div class="${optionsResponse.ok ? 'success' : 'error'}">
+                        <strong>OPTIONS 请求：</strong> ${optionsResponse.status} ${optionsResponse.statusText}<br>
+                        允许的方法: ${optionsResponse.headers.get('Allow') || '未指定'}<br>
+                        CORS头: ${optionsResponse.headers.get('Access-Control-Allow-Origin') || '未设置'}
+                    </div>
+                `;
+
+                // 创建测试文件
+                const testFile = new File(['test content'], 'test.csv', { type: 'text/csv' });
+                const formData = new FormData();
+                formData.append('file', testFile);
+
+                // 测试POST请求
+                const postResponse = await fetch(`http://localhost:${port}/api/v1/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const postData = await postResponse.json();
+
+                resultsDiv.innerHTML += `
+                    <div class="${postResponse.ok ? 'success' : 'error'}">
+                        <strong>POST 请求：</strong> ${postResponse.status} ${postResponse.statusText}<br>
+                        <pre>${JSON.stringify(postData, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultsDiv.innerHTML += `<div class="error">❌ 错误: ${error.message}</div>`;
+            }
+        }
+
+        async function checkFrontendConfig() {
+            const resultsDiv = document.getElementById('config-results');
+
+            const info = {
+                'localStorage.lastWorkingPort': localStorage.getItem('lastWorkingPort'),
+                'window.location.origin': window.location.origin,
+                'VUE_APP_API_BASE_URL': 'process.env中的值（需要在Vue应用中查看）'
+            };
+
+            resultsDiv.innerHTML = `
+                <div class="info">
+                    <strong>前端配置信息：</strong>
+                    <pre>${JSON.stringify(info, null, 2)}</pre>
+                    <br>
+                    <strong>建议：</strong><br>
+                    1. 打开浏览器控制台（F12）<br>
+                    2. 切换到Console标签<br>
+                    3. 查找 "✅ API地址已初始化" 的日志<br>
+                    4. 确认使用的是 http://localhost:8004/api/v1
+                </div>
+            `;
+        }
+
+        async function testCORS() {
+            const resultsDiv = document.getElementById('cors-results');
+            resultsDiv.innerHTML = '<div class="info">正在测试CORS...</div>';
+
+            const ports = [8000, 8002, 8004];
+            const results = [];
+
+            for (const port of ports) {
+                try {
+                    const response = await fetch(`http://localhost:${port}/api/v1/files`, {
+                        method: 'GET'
+                    });
+
+                    results.push({
+                        port,
+                        status: response.ok ? '✅ 成功' : `❌ ${response.status}`,
+                        cors: response.headers.get('Access-Control-Allow-Origin'),
+                        data: response.ok ? await response.json() : null
+                    });
+                } catch (error) {
+                    results.push({
+                        port,
+                        status: '❌ 失败',
+                        error: error.message
+                    });
+                }
+            }
+
+            resultsDiv.innerHTML = results.map(r => `
+                <div class="${r.status.includes('✅') ? 'success' : 'error'}">
+                    <strong>端口 ${r.port}:</strong> ${r.status}<br>
+                    ${r.cors ? `CORS: ${r.cors}<br>` : ''}
+                    ${r.error ? `错误: ${r.error}` : ''}
+                </div>
+            `).join('');
+        }
+
+        // 自动执行端口扫描
+        window.onload = () => {
+            scanPorts();
+        };
+    </script>
+</body>
+</html>

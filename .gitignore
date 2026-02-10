@@ -1,0 +1,110 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 数据文件
+data/raw/*
+data/processed/*
+data/features/*
+data/models/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/features/.gitkeep
+!data/models/.gitkeep
+
+# 结果文件
+results/*
+!results/.gitkeep
+
+# 日志
+logs/
+*.log
+
+# 数据库
+*.db
+*.sqlite
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 测试覆盖率
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Windows 错误文件
+nul
+
+# Claude CLI
+.claude/
+
+# 测试结果和分析输出
+test_results/
+feature_analysis/
+
+# 临时图片
+heartcycle/picture/
+
+# 运行时生成的文件
+run_tests.py
+test_api_endpoints.py
+verify_cleanup.py
+clean_shap.py
+
+# 前端构建输出
+frontend/dist/
+
+# 数据目录下的所有文件（保留目录结构）
+backend/data/
+data/raw/
+data/processed/
+data/features/
+data/models/
