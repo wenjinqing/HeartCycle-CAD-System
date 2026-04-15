@@ -113,12 +113,8 @@ data/models/
 heartcycle/*.xlsx
 heartcycle/**/*.xlsx
 
-# 毕业论文目录中的 Word 临时文件与可能含隐私的示例表（其余文稿可按需单独 add）
-论文/**/*.docx
-论文/**/*.tmp
-论文/**/patient_data_sample.csv
-论文/**/patient_labels.csv
+# 毕业论文工作区（含 Word、图表与示例表，默认不入库；需要时用 git add -f 挑选）
+论文/
 
-# 测试数据中的波形与表格（体量与内容不宜进主仓库，保留同目录下说明类文件即可）
-heartcycle_cad_system/测试数据/**/*.h5
-heartcycle_cad_system/测试数据/**/*.csv
+# 测试数据（含 H5、CSV、测试账号 JSON 等，默认不入库）
+heartcycle_cad_system/测试数据/
