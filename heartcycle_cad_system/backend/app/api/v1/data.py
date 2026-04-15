@@ -10,7 +10,7 @@ from app.core.logger import logger
 from app.models.response import FileUploadResponse, FileListResponse, BaseResponse
 from app.core.utils import validate_file_path, ensure_dir
 
-router = APIRouter()
+router = APIRouter(prefix="/data", tags=["数据管理"])
 
 
 @router.post("/upload", response_model=FileUploadResponse)

@@ -1,16 +1,70 @@
 """
 模型训练API
 """
-from fastapi import APIRouter, HTTPException
+import json
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 from typing import List, Literal, Optional
+
 from app.services.model_service import ModelService
+from app.services.training_model_version_registry import register_training_as_model_version
 from app.models.response import ModelTrainingResponse, ModelInfoResponse, PredictionResponse, BaseResponse
 from app.core.exceptions import ModelTrainingError, InvalidParameterError
 from app.core.logger import logger
+from app.db.base import get_db
+from app.api.deps import get_current_user_optional, assert_user_can_access_patient, require_staff
+from app.services.patient_service import PatientService
+from app.models.user import User
 
 router = APIRouter()
 model_service = ModelService()
+
+
+def _risk_level_from_probabilities(probabilities: List[float]) -> str:
+    p_pos = float(probabilities[1]) if len(probabilities) > 1 else float(probabilities[0] if probabilities else 0.5)
+    if p_pos >= 0.66:
+        return "high"
+    if p_pos >= 0.33:
+        return "medium"
+    return "low"
+
+
+def _user_role_str(user: User) -> str:
+    r = user.role
+    return r.value if hasattr(r, "value") else str(r)
+
+
+def _persist_patient_prediction(
+    db: Session,
+    current_user: Optional[User],
+    patient_id: int,
+    model_id: str,
+    prediction: int,
+    probabilities: List[float],
+    input_features_json: Optional[str] = None,
+) -> None:
+    if not current_user:
+        raise HTTPException(
+            status_code=401,
+            detail="保存预测记录需要登录；请登录后从患者详情「新建预测」进入监测页再分析",
+        )
+    ps = PatientService(db)
+    patient = ps.get_patient(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="患者不存在")
+    assert_user_can_access_patient(current_user, patient, db)
+    mid = (model_id or "")[:100]
+    ps.create_prediction_record(
+        user_id=current_user.id,
+        patient_id=patient_id,
+        model_id=mid,
+        prediction=int(prediction),
+        probability=json.dumps(probabilities),
+        risk_level=_risk_level_from_probabilities(probabilities),
+        input_features=input_features_json,
+        shap_values=None,
+    )
 
 
 class TrainModelRequest(BaseModel):
@@ -23,6 +77,16 @@ class TrainModelRequest(BaseModel):
     random_state: int = Field(42, description="随机种子")
     use_smote: bool = Field(True, description="是否使用SMOTE处理数据不平衡")
     optimize_hyperparams: bool = Field(False, description="是否进行超参数优化")
+    display_name: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="自定义模型名称（展示在模型版本管理；留空则使用「类型_训练模型」）",
+    )
+    model_description: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="模型说明（展示在模型版本管理）",
+    )
 
 
 class TrainFromH5Request(BaseModel):
@@ -38,6 +102,24 @@ class TrainFromH5Request(BaseModel):
     use_existing_rpeaks: bool = Field(True, description="是否使用已有R波标注")
     extract_hrv: bool = Field(True, description="是否提取HRV特征")
     extract_clinical: bool = Field(True, description="是否提取临床特征")
+    hold_out_path_substring: Optional[str] = Field(
+        None,
+        description="路径中包含该子串的 H5 不参与训练，仅在训练结束后作为预留验证集评估（如 59146239）；与 hold_out_subject_id 二选一",
+    )
+    hold_out_subject_id: Optional[str] = Field(
+        None,
+        description="按受试者ID留出（逗号分隔多个），不参与训练；优先匹配元数据 Subject_ID，与 hold_out_path_substring 二选一",
+    )
+    display_name: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="自定义模型名称（模型版本管理页展示）",
+    )
+    model_description: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="模型说明（模型版本管理页展示）",
+    )
 
 
 class TrainFromH5AutoRequest(BaseModel):
@@ -53,16 +135,65 @@ class TrainFromH5AutoRequest(BaseModel):
     use_existing_rpeaks: bool = Field(True, description="是否使用已有R波标注")
     extract_hrv: bool = Field(True, description="是否提取HRV特征")
     extract_clinical: bool = Field(True, description="是否提取临床特征")
+    hold_out_path_substring: Optional[str] = Field(
+        None,
+        description="路径中包含该子串的 H5 不参与训练，仅在训练结束后作为预留验证集评估（如 59146239）；与 hold_out_subject_id 二选一",
+    )
+    hold_out_subject_id: Optional[str] = Field(
+        None,
+        description="按受试者ID留出（逗号分隔多个）；与 hold_out_path_substring 二选一",
+    )
+    display_name: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="自定义模型名称（模型版本管理页展示）",
+    )
+    model_description: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="模型说明（模型版本管理页展示）",
+    )
 
 
 class PredictRequest(BaseModel):
     """预测请求"""
     model_id: str = Field(..., description="模型ID")
     features: List[float] = Field(..., description="特征向量", min_items=1)
+    patient_id: Optional[int] = Field(
+        None,
+        description="若提供，则在已登录且有权限时将该次预测写入该患者的预测记录",
+    )
+
+
+class BatchPredictRequest(BaseModel):
+    """批量预测请求（服务端一次加载模型、矩阵推理）"""
+    model_id: str = Field(..., description="模型ID")
+    features_rows: List[List[float]] = Field(
+        ...,
+        description="每行一条样本的特征向量列表",
+        min_length=1,
+        max_length=5000,
+    )
+
+
+class BatchPredictionItem(BaseModel):
+    prediction: int
+    probability: List[float]
+    confidence: float
+
+
+class BatchPredictionResponse(BaseModel):
+    success: bool = True
+    count: int
+    results: List[BatchPredictionItem]
 
 
 @router.post("/train", response_model=ModelTrainingResponse)
-async def train_model(request: TrainModelRequest):
+async def train_model(
+    request: TrainModelRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """
     训练模型
     
@@ -90,6 +221,24 @@ async def train_model(request: TrainModelRequest):
         )
 
         logger.info(f"模型训练完成: {result['model_id']}")
+
+        try:
+            register_training_as_model_version(
+                db,
+                model_id=str(result.get("model_id", "")),
+                model_type=str(result.get("model_type", request.model_type)),
+                model_path=str(result.get("model_path", "")),
+                metrics=result.get("metrics"),
+                n_samples=result.get("n_samples"),
+                n_features=result.get("n_features"),
+                feature_names=None,
+                display_name=request.display_name,
+                model_description=request.model_description,
+                created_by=current_user.id if current_user else None,
+            )
+        except Exception as e:
+            logger.warning("CSV 训练成功但登记模型版本失败: %s", e)
+
         return ModelTrainingResponse(**result)
         
     except FileNotFoundError as e:
@@ -101,7 +250,10 @@ async def train_model(request: TrainModelRequest):
 
 
 @router.post("/train/h5/auto")
-async def train_from_h5_auto(request: TrainFromH5AutoRequest):
+async def train_from_h5_auto(
+    request: TrainFromH5AutoRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """
     从H5文件训练模型（自动识别标签）
 
@@ -169,10 +321,26 @@ async def train_from_h5_auto(request: TrainFromH5AutoRequest):
                 detail="auto_detect_labels必须为True"
             )
 
-        # 3. 使用第一个H5文件所在目录作为data_dir
-        data_dir = os.path.dirname(request.h5_files[0])
+        # 3. data_dir：多文件时取各文件所在目录的公共祖先，避免误扫到兄弟目录下其它 H5
+        norm_dirs = [os.path.dirname(os.path.normpath(f)) for f in request.h5_files]
+        try:
+            data_dir = os.path.commonpath(norm_dirs)
+        except ValueError:
+            data_dir = norm_dirs[0]
 
-        # 4. 启动训练任务
+        ho = request.hold_out_path_substring
+        if ho is not None and not str(ho).strip():
+            ho = None
+        hos = request.hold_out_subject_id
+        if hos is not None and not str(hos).strip():
+            hos = None
+        if ho and hos:
+            raise HTTPException(
+                status_code=400,
+                detail="hold_out_path_substring 与 hold_out_subject_id 不能同时指定，请二选一",
+            )
+
+        # 4. 启动训练任务（显式 H5 列表与可选预留验证）
         task_id = model_service.start_h5_training_task(
             data_dir=data_dir,
             metadata_file=request.metadata_file,
@@ -184,7 +352,13 @@ async def train_from_h5_auto(request: TrainFromH5AutoRequest):
             optimize_hyperparams=request.optimize_hyperparams,
             use_existing_rpeaks=request.use_existing_rpeaks,
             extract_hrv=request.extract_hrv,
-            extract_clinical=request.extract_clinical
+            extract_clinical=request.extract_clinical,
+            h5_files_explicit=request.h5_files,
+            hold_out_path_substring=ho,
+            hold_out_subject_id=hos,
+            display_name=request.display_name,
+            model_description=request.model_description,
+            created_by_user_id=current_user.id if current_user else None,
         )
 
         logger.info(f"H5自动标签训练任务 {task_id} 已启动")
@@ -207,7 +381,10 @@ async def train_from_h5_auto(request: TrainFromH5AutoRequest):
 
 
 @router.post("/train/h5")
-async def start_h5_training(request: TrainFromH5Request):
+async def start_h5_training(
+    request: TrainFromH5Request,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """
     启动从H5文件训练模型任务（异步）
     
@@ -223,6 +400,18 @@ async def start_h5_training(request: TrainFromH5Request):
     try:
         logger.info(f"启动H5文件训练任务: {request.model_type}, 数据目录: {request.data_dir}")
         
+        ho = request.hold_out_path_substring
+        if ho is not None and not str(ho).strip():
+            ho = None
+        hos = request.hold_out_subject_id
+        if hos is not None and not str(hos).strip():
+            hos = None
+        if ho and hos:
+            raise HTTPException(
+                status_code=400,
+                detail="hold_out_path_substring 与 hold_out_subject_id 不能同时指定，请二选一",
+            )
+
         task_id = model_service.start_h5_training_task(
             data_dir=request.data_dir,
             metadata_file=request.metadata_file,
@@ -234,7 +423,12 @@ async def start_h5_training(request: TrainFromH5Request):
             optimize_hyperparams=request.optimize_hyperparams,
             use_existing_rpeaks=request.use_existing_rpeaks,
             extract_hrv=request.extract_hrv,
-            extract_clinical=request.extract_clinical
+            extract_clinical=request.extract_clinical,
+            hold_out_path_substring=ho,
+            hold_out_subject_id=hos,
+            display_name=request.display_name,
+            model_description=request.model_description,
+            created_by_user_id=current_user.id if current_user else None,
         )
         
         # 验证任务是否已创建
@@ -328,7 +522,10 @@ async def get_model_info(model_id: str):
     try:
         info = model_service.get_model_info(model_id)
         if "error" in info:
-            raise HTTPException(status_code=404, detail=info["error"])
+            detail = str(info["error"])
+            # 文件缺失 →404；损坏/反序列化失败等 →500
+            status_code = 404 if "模型不存在" in detail else 500
+            raise HTTPException(status_code=status_code, detail=detail)
         return ModelInfoResponse(**info)
     except HTTPException:
         raise
@@ -338,7 +535,10 @@ async def get_model_info(model_id: str):
 
 
 @router.delete("/models/{model_id}", response_model=BaseResponse)
-async def delete_model(model_id: str):
+async def delete_model(
+    model_id: str,
+    current_user: User = Depends(require_staff),
+):
     """
     删除模型
     
@@ -369,7 +569,11 @@ async def delete_model(model_id: str):
 
 
 @router.post("/predict", response_model=PredictionResponse)
-async def predict(request: PredictRequest):
+async def predict(
+    request: PredictRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """
     单样本预测
     
@@ -387,6 +591,16 @@ async def predict(request: PredictRequest):
             raise InvalidParameterError("特征向量不能为空")
         
         result = model_service.predict(request.model_id, request.features)
+        if request.patient_id is not None:
+            _persist_patient_prediction(
+                db,
+                current_user,
+                request.patient_id,
+                request.model_id,
+                result["prediction"],
+                result["probability"],
+                input_features_json=json.dumps(request.features),
+            )
         return PredictionResponse(**result)
         
     except HTTPException:
@@ -396,16 +610,53 @@ async def predict(request: PredictRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/predict/batch", response_model=BatchPredictionResponse)
+async def predict_batch(request: BatchPredictRequest):
+    """
+    批量预测：单次请求内多条样本，模型只加载一次，适合大批量 CSV。
+    """
+    try:
+        if not request.features_rows:
+            raise InvalidParameterError("features_rows 不能为空")
+        raw = model_service.predict_batch(request.model_id, request.features_rows)
+        items = [
+            BatchPredictionItem(
+                prediction=int(r["prediction"]),
+                probability=[float(x) for x in r["probability"]],
+                confidence=float(r["confidence"]),
+            )
+            for r in raw
+        ]
+        return BatchPredictionResponse(success=True, count=len(items), results=items)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"批量预测失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class EnsemblePredictRequest(BaseModel):
     """集成预测请求"""
     model_ids: List[str] = Field(..., description="模型ID列表", min_items=1)
     features: List[float] = Field(..., description="特征向量", min_items=1)
     method: Literal["voting", "weighted"] = Field("voting", description="集成方法：voting（投票）或weighted（加权平均）")
     weights: Optional[List[float]] = Field(None, description="权重列表（用于加权平均）")
+    patient_id: Optional[int] = Field(
+        None,
+        description="若提供，则在已登录且有权限时将该次集成预测写入该患者的预测记录",
+    )
 
 
 @router.post("/predict/ensemble", response_model=BaseResponse)
-async def predict_ensemble(request: EnsemblePredictRequest):
+async def predict_ensemble(
+    request: EnsemblePredictRequest,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """
     集成预测（使用多个模型）
     
@@ -434,6 +685,19 @@ async def predict_ensemble(request: EnsemblePredictRequest):
             method=request.method,
             weights=request.weights
         )
+        if request.patient_id is not None:
+            joined = "ensemble:" + ",".join(request.model_ids)
+            if len(joined) > 100:
+                joined = joined[:97] + "..."
+            _persist_patient_prediction(
+                db,
+                current_user,
+                request.patient_id,
+                joined,
+                result["prediction"],
+                result["probability"],
+                input_features_json=json.dumps(request.features),
+            )
         
         return {
             "success": True,

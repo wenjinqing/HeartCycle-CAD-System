@@ -87,14 +87,17 @@ class SHAPService:
                         background = np.zeros((1, model.n_features_in_))
                     explainer = shap.KernelExplainer(model.predict_proba, background)
             else:
-                # 其他模型使用KernelExplainer（通用但较慢）
-                if training_data is not None:
-                    background_size = min(100, len(training_data))
-                    background_indices = np.random.choice(len(training_data), background_size, replace=False)
-                    background = training_data[background_indices]
-                else:
-                    background = np.zeros((1, model.n_features_in_))
-                explainer = shap.KernelExplainer(model.predict_proba, background)
+                # LGB/XGB/其他树模型优先用TreeExplainer，失败再用KernelExplainer
+                try:
+                    explainer = shap.TreeExplainer(model)
+                except Exception:
+                    if training_data is not None:
+                        background_size = min(50, len(training_data))
+                        background_indices = np.random.choice(len(training_data), background_size, replace=False)
+                        background = shap.kmeans(training_data[background_indices], 10)
+                    else:
+                        background = np.zeros((1, model.n_features_in_))
+                    explainer = shap.KernelExplainer(lambda x: model.predict_proba(x), background)
             
             # 缓存解释器
             self.explainers[cache_key] = explainer
@@ -181,11 +184,25 @@ class SHAPService:
                 # 多分类：选择预测类别对应的SHAP值
                 class_idx = int(prediction) if prediction < len(shap_values) else 0
                 shap_values_instance = shap_values[class_idx][0]  # 取第一个样本
-                base_value = explainer.expected_value[class_idx] if isinstance(explainer.expected_value, (list, np.ndarray)) else explainer.expected_value
+
+                # 处理base_value
+                if isinstance(explainer.expected_value, (list, np.ndarray)):
+                    base_value = float(explainer.expected_value[class_idx])
+                else:
+                    base_value = float(explainer.expected_value)
             else:
                 # 二分类：shap_values已经是正确格式
                 shap_values_instance = shap_values[0]  # 取第一个样本
-                base_value = explainer.expected_value[0] if isinstance(explainer.expected_value, (list, np.ndarray)) and len(explainer.expected_value) > 0 else explainer.expected_value
+
+                # 处理base_value
+                if isinstance(explainer.expected_value, (list, np.ndarray)):
+                    if len(explainer.expected_value) > 0:
+                        # 如果是数组，取第一个元素
+                        base_value = float(explainer.expected_value[0]) if hasattr(explainer.expected_value[0], '__float__') else float(explainer.expected_value[0][0])
+                    else:
+                        base_value = 0.0
+                else:
+                    base_value = float(explainer.expected_value)
             
             # 处理特征名称
             if selected_features is not None and feature_names:

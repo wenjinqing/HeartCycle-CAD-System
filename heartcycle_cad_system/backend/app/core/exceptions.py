@@ -80,3 +80,63 @@ class InvalidParameterError(BaseAPIException):
         )
 
 
+# ==================== 认证相关异常 ====================
+
+class AuthenticationError(BaseAPIException):
+    """认证错误"""
+    def __init__(self, message: str = "认证失败"):
+        super().__init__(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=message,
+            error_code=ErrorCode.INTERNAL_SERVER_ERROR
+        )
+
+
+class AuthorizationError(BaseAPIException):
+    """授权错误"""
+    def __init__(self, message: str = "权限不足"):
+        super().__init__(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=message,
+            error_code=ErrorCode.INTERNAL_SERVER_ERROR
+        )
+
+
+class InvalidTokenError(BaseAPIException):
+    """无效令牌"""
+    def __init__(self, message: str = "无效的令牌"):
+        super().__init__(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=message,
+            error_code=ErrorCode.INTERNAL_SERVER_ERROR
+        )
+
+
+class UserNotFoundError(BaseAPIException):
+    """用户不存在"""
+    def __init__(self, message: str = "用户不存在"):
+        super().__init__(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=message,
+            error_code=ErrorCode.INTERNAL_SERVER_ERROR
+        )
+
+
+class UserAlreadyExistsError(BaseAPIException):
+    """用户已存在"""
+    def __init__(self, message: str = "用户已存在"):
+        super().__init__(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message,
+            error_code=ErrorCode.INTERNAL_SERVER_ERROR
+        )
+
+
+class ModelNotFoundError(BaseAPIException):
+    """模型未找到"""
+    def __init__(self, message: str = "模型不存在"):
+        super().__init__(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=message,
+            error_code=ErrorCode.INTERNAL_SERVER_ERROR
+        )

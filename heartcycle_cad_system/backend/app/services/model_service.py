@@ -1,13 +1,14 @@
 """
 模型训练服务
 """
+import json
 import os
 import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -19,6 +20,37 @@ from app.core.config import settings
 from app.core.logger import logger
 from app.core.utils import normalize_file_path, validate_file_path
 from app.core.validators import TrainingDataValidator
+
+
+def _sanitize_for_api_json(obj: Any) -> Any:
+    """将 NaN/Inf、numpy 标量转为 JSON 安全值，避免响应序列化或 Pydantic 校验失败。"""
+    import math
+
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return {str(k): _sanitize_for_api_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_api_json(v) for v in obj]
+    _np_bool = getattr(np, "bool_", type(None))
+    if isinstance(obj, (np.floating, np.integer)) or (_np_bool is not type(None) and isinstance(obj, _np_bool)):
+        try:
+            if _np_bool is not type(None) and isinstance(obj, _np_bool):
+                return bool(obj)
+            if isinstance(obj, np.integer):
+                return int(obj)
+            x = float(obj)
+            if math.isnan(x) or math.isinf(x):
+                return None
+            return x
+        except (ValueError, TypeError, OverflowError):
+            return None
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    return obj
+
 
 # 导入任务存储
 try:
@@ -249,7 +281,13 @@ class ModelService:
         optimize_hyperparams: bool = False,
         use_existing_rpeaks: bool = True,
         extract_hrv: bool = True,
-        extract_clinical: bool = True
+        extract_clinical: bool = True,
+        h5_files_explicit: Optional[List[str]] = None,
+        hold_out_path_substring: Optional[str] = None,
+        hold_out_subject_id: Optional[str] = None,
+        display_name: Optional[str] = None,
+        model_description: Optional[str] = None,
+        created_by_user_id: Optional[int] = None,
     ) -> str:
         """
         启动H5训练任务（异步）
@@ -269,7 +307,10 @@ class ModelService:
             "total_files": 0,
             "processed_files": 0,
             "result": None,
-            "error": None
+            "error": None,
+            "display_name": display_name,
+            "model_description": model_description,
+            "created_by_user_id": created_by_user_id,
         }
 
         # 使用线程安全的方法创建任务
@@ -321,8 +362,40 @@ class ModelService:
                     use_existing_rpeaks=use_existing_rpeaks,
                     extract_hrv=extract_hrv,
                     extract_clinical=extract_clinical,
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback,
+                    h5_files_explicit=h5_files_explicit,
+                    hold_out_path_substring=hold_out_path_substring,
+                    hold_out_subject_id=hold_out_subject_id,
                 )
+
+                # 写入模型版本管理（名称、描述供前端展示）
+                try:
+                    from app.db.base import SessionLocal
+                    from app.services.training_model_version_registry import (
+                        register_training_as_model_version,
+                    )
+
+                    _db = SessionLocal()
+                    try:
+                        register_training_as_model_version(
+                            _db,
+                            model_id=str(result.get("model_id", "")),
+                            model_type=str(result.get("model_type", model_type)),
+                            model_path=str(result.get("model_path", "")),
+                            metrics=result.get("metrics"),
+                            n_samples=result.get("n_samples"),
+                            n_features=result.get("n_features"),
+                            feature_names=None,
+                            display_name=display_name,
+                            model_description=model_description,
+                            created_by=int(created_by_user_id)
+                            if created_by_user_id is not None
+                            else None,
+                        )
+                    finally:
+                        _db.close()
+                except Exception as reg_err:
+                    logger.warning("训练成功但登记模型版本失败: %s", reg_err)
 
                 # 更新任务状态
                 self._update_training_task(task_id, {
@@ -381,8 +454,11 @@ class ModelService:
         use_existing_rpeaks: bool = True,
         extract_hrv: bool = True,
         extract_clinical: bool = True,
-        progress_callback: Optional[Callable] = None
-    ) -> Dict:
+        progress_callback: Optional[Callable] = None,
+        h5_files_explicit: Optional[List[str]] = None,
+        hold_out_path_substring: Optional[str] = None,
+        hold_out_subject_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         从H5文件训练模型
 
@@ -453,7 +529,10 @@ class ModelService:
                 extract_hrv=extract_hrv,
                 extract_clinical=extract_clinical,
                 save_features=True,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                h5_files_explicit=h5_files_explicit,
+                hold_out_path_substring=hold_out_path_substring,
+                hold_out_subject_id=hold_out_subject_id,
             )
             
             # 生成模型ID并存储元数据
@@ -574,8 +653,99 @@ class ModelService:
                 seen_model_ids.add(model_id)
                 continue
         
+        # 3. 多模态融合模型（Keras，元数据为 *_mm_metadata.json，非 .joblib）
+        try:
+            models_path = Path(models_dir)
+            for meta_path in models_path.glob("mm_fusion_*_mm_metadata.json"):
+                try:
+                    mid = meta_path.name.replace("_mm_metadata.json", "")
+                    if mid in seen_model_ids:
+                        continue
+                    mm_info = self._try_build_multimodal_model_info(mid, meta_path=meta_path)
+                    if not mm_info:
+                        continue
+                    models_list.append(mm_info)
+                    seen_model_ids.add(mid)
+                    self.models[mid] = mm_info.copy()
+                except Exception as e:
+                    logger.warning(f"读取多模态元数据失败 {meta_path}: {e}")
+        except Exception as e:
+            logger.warning(f"扫描多模态模型目录失败: {e}")
+
         logger.info(f"模型列表扫描完成，共找到 {len(models_list)} 个模型（已处理 {len(seen_model_ids)} 个模型文件）")
         return models_list
+
+    def _try_build_multimodal_model_info(
+        self, model_id: str, meta_path: Optional[Path] = None
+    ) -> Optional[Dict[str, Any]]:
+        """若存在多模态元数据文件，则组装与 ModelInfoResponse / 前端详情页兼容的字典。"""
+        p = meta_path or (Path(settings.MODELS_DIR) / f"{model_id}_mm_metadata.json")
+        if not p.is_file():
+            return None
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+            logger.error(f"读取多模态元数据失败 {p}: {e}")
+            return None
+        try:
+            results = meta.get("results") or {}
+            report = results.get("classification_report") or {}
+            macro = report.get("macro avg") or {}
+            tr_s = meta.get("train_samples")
+            va_s = meta.get("val_samples")
+            te_s = meta.get("test_samples")
+            n_all = meta.get("num_samples")
+            split_note = None
+            if tr_s is not None and va_s is not None and te_s is not None:
+                split_note = f"train/val/test = {int(tr_s)}/{int(va_s)}/{int(te_s)}（固定划分，非 K 折）"
+            metrics: Dict[str, Any] = {
+                "final_accuracy": results.get("test_accuracy"),
+                "final_roc_auc": results.get("test_auc"),
+                "final_f1": macro.get("f1-score"),
+                "final_precision": macro.get("precision"),
+                "final_recall": macro.get("recall"),
+                "confusion_matrix": results.get("confusion_matrix"),
+                "smote_applied": False,
+                "test_loss": results.get("test_loss"),
+                # 详情页与表格模型字段对齐（多模态无 SMOTE、无 K 折）
+                "original_samples": n_all,
+                "resampled_samples": None,
+                "cv_folds_note": split_note or "固定 train/val/test 划分（非 K 折交叉验证）",
+                "multimodal": {
+                    "history": meta.get("history"),
+                    "fusion_mode": meta.get("fusion_mode"),
+                    "image_mode": meta.get("image_mode"),
+                    "epochs_trained": meta.get("epochs_trained"),
+                    "epochs": meta.get("epochs"),
+                    "best_val_auc": meta.get("best_val_auc"),
+                    "best_val_loss": meta.get("best_val_loss"),
+                    "label_source": meta.get("label_source"),
+                    "num_samples": meta.get("num_samples"),
+                },
+            }
+            ca = meta.get("created_at")
+            if ca is not None and not isinstance(ca, str):
+                ca = str(ca)
+            if not ca:
+                ca = "unknown"
+            nfeat = meta.get("n_hrv_features")
+            try:
+                feature_count = int(nfeat) if nfeat is not None else 0
+            except (TypeError, ValueError):
+                feature_count = 0
+            out = {
+                "model_id": meta.get("model_id", model_id),
+                "model_type": meta.get("model_type", "multimodal_fusion"),
+                "metrics": metrics,
+                "feature_count": feature_count,
+                "created_at": ca,
+                "feature_file": None,
+            }
+            return _sanitize_for_api_json(out)
+        except Exception as e:
+            logger.error(f"组装多模态模型信息失败 {model_id}: {e}", exc_info=True)
+            return None
     
     def get_model_info(self, model_id: str) -> Dict:
         """
@@ -590,8 +760,12 @@ class ModelService:
         --------
         dict : 模型信息
         """
+        mm_info = self._try_build_multimodal_model_info(model_id)
+        if mm_info:
+            return mm_info
+
         if model_id not in self.models:
-            # 尝试从文件系统加载
+            # 尝试从文件系统加载（sklearn Pipeline 的 .joblib）
             try:
                 model_data = ModelTrainer.load(model_id)
                 metadata = model_data.get('metadata', {})
@@ -607,6 +781,10 @@ class ModelService:
                 feature_names = model_data.get('feature_names') or []
                 n_features = model_data.get('n_features')
                 if n_features is None:
+                    n_features = len(feature_names) if feature_names else 0
+                try:
+                    n_features = int(n_features)
+                except (TypeError, ValueError):
                     n_features = len(feature_names) if feature_names else 0
                 
                 # 如果文件存在但元数据不在内存中，返回基本信息
@@ -624,20 +802,34 @@ class ModelService:
                 if 'cv_folds' in metadata and 'cv_folds' not in metrics:
                     metrics['cv_folds'] = metadata['cv_folds']
                 
-                return {
+                fnames = model_data.get("feature_names")
+                if isinstance(fnames, (list, tuple)):
+                    fnames = [str(x) for x in fnames]
+                else:
+                    fnames = None
+
+                return _sanitize_for_api_json({
                     "model_id": model_id,
                     "model_type": model_data.get('model_type', 'unknown'),
                     "metrics": metrics,  # 可能为None或空字典
                     "feature_count": n_features,
-                    "created_at": created_at
-                }
+                    "created_at": created_at,
+                    "feature_names": fnames,
+                })
             except FileNotFoundError:
-                raise FileNotFoundError(f"模型不存在: {model_id}")
+                return {"error": f"模型不存在: {model_id}"}
+            except Exception as e:
+                logger.error(f"加载模型文件失败 {model_id}: {e}", exc_info=True)
+                return {"error": f"无法加载模型 {model_id}: {str(e)}"}
         
         info = self.models[model_id].copy()
         # 确保包含所有必需字段
         if 'feature_count' not in info:
             info['feature_count'] = info.get('n_features', 0)
+        try:
+            info["feature_count"] = int(info["feature_count"] or 0)
+        except (TypeError, ValueError):
+            info["feature_count"] = 0
         # 确保 metrics 字段存在（即使为 None）
         if 'metrics' not in info:
             info['metrics'] = {}
@@ -651,8 +843,12 @@ class ModelService:
             # 尝试从训练结果中获取（如果存在）
             if 'cv_folds' in info:
                 info['metrics']['cv_folds'] = info['cv_folds']
-        # 尝试从模型文件中获取feature_file路径（用于SHAP全局解释）
-        if 'feature_file' not in info:
+        # 尝试从模型文件中获取 feature_file（仅 sklearn .joblib；多模态无此文件）
+        if (
+            'feature_file' not in info
+            and not str(model_id).startswith("mm_fusion")
+            and info.get("model_type") != "multimodal_fusion"
+        ):
             try:
                 model_data = ModelTrainer.load(model_id)
                 metadata = model_data.get('metadata', {})
@@ -660,7 +856,7 @@ class ModelService:
                     info['feature_file'] = metadata['feature_file']
             except Exception:
                 pass  # 如果加载失败，忽略
-        return info
+        return _sanitize_for_api_json(info)
     
     def delete_model(self, model_id: str) -> Dict:
         """
@@ -677,6 +873,22 @@ class ModelService:
         """
         try:
             from app.core.utils import get_model_file_path
+
+            # 0. 多模态融合模型（无 .joblib）
+            mm_meta = Path(settings.MODELS_DIR) / f"{model_id}_mm_metadata.json"
+            if mm_meta.is_file():
+                for suffix in ("_mm.h5", "_mm_scaler.pkl", "_mm_metadata.json"):
+                    p = Path(settings.MODELS_DIR) / f"{model_id}{suffix}"
+                    if p.exists():
+                        try:
+                            p.unlink()
+                        except OSError as oe:
+                            logger.error(f"删除多模态文件失败 {p}: {oe}")
+                            return {"success": False, "error": f"删除文件失败: {p}"}
+                if model_id in self.models:
+                    del self.models[model_id]
+                logger.info(f"已删除多模态模型: {model_id}")
+                return {"success": True, "message": f"模型 {model_id} 已成功删除"}
             
             # 1. 检查模型是否存在
             model_file_path = get_model_file_path(model_id)
@@ -812,4 +1024,91 @@ class ModelService:
         except Exception as e:
             logger.error(f"预测失败: {str(e)}")
             raise ValueError(f"预测失败: {str(e)}")
+
+    def predict_batch(self, model_id: str, features_rows: List[List[float]]) -> List[Dict[str, Any]]:
+        """
+        批量预测：只加载模型与预处理一次，对特征矩阵向量化推理。
+        """
+        if not features_rows:
+            raise ValueError("批量特征不能为空")
+        max_batch = 5000
+        if len(features_rows) > max_batch:
+            raise ValueError(f"单次请求最多 {max_batch} 条，请分批调用")
+
+        try:
+            X = np.asarray(features_rows, dtype=np.float64)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"特征矩阵格式无效: {e}") from e
+        if X.ndim != 2:
+            raise ValueError("features_rows 须为二维列表（每行一条样本）")
+        if np.any(np.isnan(X)) or np.any(np.isinf(X)):
+            raise ValueError("特征包含 NaN 或 Inf，请检查 CSV 数据")
+
+        n_samples, n_provided_features = X.shape
+
+        try:
+            model_data = ModelTrainer.load(model_id)
+            model = model_data["model"]
+            scaler = model_data.get("scaler")
+            selected_features = model_data.get("selected_features")
+            feature_names = model_data.get("feature_names", [])
+
+            if hasattr(model, "n_features_in_"):
+                n_expected_features = model.n_features_in_
+            else:
+                metadata = model_data.get("metadata", {})
+                n_expected_features = metadata.get("n_features") or (
+                    len(feature_names) if feature_names else None
+                )
+
+            if n_expected_features is not None and n_provided_features != n_expected_features:
+                if n_provided_features < n_expected_features:
+                    padding = np.zeros((n_samples, n_expected_features - n_provided_features))
+                    X = np.hstack([X, padding])
+                    n_provided_features = n_expected_features
+                elif n_provided_features > n_expected_features:
+                    X = X[:, :n_expected_features]
+                    n_provided_features = n_expected_features
+
+            if selected_features is not None:
+                if n_expected_features is not None and n_provided_features < max(selected_features) + 1:
+                    raise ValueError(
+                        f"选择的特征索引超出范围: 需要至少{max(selected_features) + 1}个特征，但只有{n_provided_features}个"
+                    )
+                X = X[:, selected_features]
+
+            if scaler is not None:
+                X = scaler.transform(X)
+
+            predictions = model.predict(X)
+            if hasattr(model, "predict_proba"):
+                prob_matrix = model.predict_proba(X)
+                out: List[Dict[str, Any]] = []
+                for i in range(n_samples):
+                    pr = prob_matrix[i].tolist()
+                    out.append(
+                        {
+                            "prediction": int(predictions[i]),
+                            "probability": pr,
+                            "confidence": float(max(pr)),
+                        }
+                    )
+                return out
+
+            out = []
+            for i in range(n_samples):
+                out.append(
+                    {
+                        "prediction": int(predictions[i]),
+                        "probability": [0.5, 0.5],
+                        "confidence": 1.0,
+                    }
+                )
+            return out
+
+        except FileNotFoundError:
+            raise FileNotFoundError(f"模型 {model_id} 不存在")
+        except Exception as e:
+            logger.error(f"批量预测失败: {str(e)}")
+            raise ValueError(f"批量预测失败: {str(e)}") from e
 

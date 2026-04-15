@@ -6,6 +6,9 @@ from sqlalchemy.sql import func
 from datetime import datetime
 from app.db.base import Base
 
+# 导入用户相关模型
+from app.models.user import User, Patient, PredictionRecord, AuditLog, PatientDoctorBinding
+
 
 class TrainingTask(Base):
     """训练任务模型"""

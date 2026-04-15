@@ -204,13 +204,15 @@ class H5LabelExtractor:
         if not label_map:
             raise ValueError("无法提取标签信息")
 
-        # 创建标签DataFrame（保持与H5文件顺序一致）
+        # 创建标签DataFrame（含 filename 列，便于训练时按文件名子集匹配）
+        filenames = []
         labels = []
         for h5_file in h5_files:
             filename = cls.extract_filename_from_path(h5_file)
+            filenames.append(filename)
             labels.append(label_map.get(filename, 0))
 
-        label_df = pd.DataFrame({'label': labels})
+        label_df = pd.DataFrame({'filename': filenames, 'label': labels})
 
         # 保存标签文件
         label_df.to_csv(output_path, index=False)

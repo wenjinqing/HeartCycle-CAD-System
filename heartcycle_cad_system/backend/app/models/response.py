@@ -11,9 +11,20 @@ class BaseResponse(BaseModel):
     success: bool = True
     message: str = "操作成功"
     timestamp: Optional[datetime] = None
-    
+
     class Config:
         # 允许额外字段，这样data字段就不会被过滤
+        extra = "allow"
+
+
+# APIResponse是BaseResponse的别名，用于新的API
+class APIResponse(BaseModel):
+    """API响应模型"""
+    success: bool = True
+    message: str = "操作成功"
+    data: Optional[Any] = None
+
+    class Config:
         extra = "allow"
 
 
@@ -74,6 +85,7 @@ class ModelInfoResponse(BaseResponse):
     feature_count: int
     created_at: Optional[str] = None  # 改为可选，兼容旧模型
     feature_file: Optional[str] = None  # 训练数据文件路径（用于SHAP全局解释）
+    feature_names: Optional[List[str]] = None  # 训练时特征列名（与 CSV 列对齐批量预测）
 
 
 class PredictionResponse(BaseResponse):
