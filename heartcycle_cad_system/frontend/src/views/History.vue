@@ -1,48 +1,56 @@
 <template>
-  <div class="history">
-    <el-card shadow="never">
+  <div class="history hc-page-shell">
+    <el-card class="hc-card-elevated" shadow="never">
       <template #header>
-        <div class="card-header">
-          <el-icon><Document /></el-icon>
-          <span>历史记录</span>
-          <div style="margin-left: auto; display: flex; gap: 10px; align-items: center">
-            <el-tag type="info">共 {{ historyList.length }} 条</el-tag>
-            <el-button
-              type="danger"
-              size="default"
-              :disabled="selectedRows.length === 0"
-              @click="handleBatchDelete"
-            >
-              <el-icon><Delete /></el-icon>
-              批量删除 ({{ selectedRows.length }})
-            </el-button>
-            <el-button
-              type="warning"
-              size="default"
-              @click="handleClearAll"
-            >
-              <el-icon><DeleteFilled /></el-icon>
-              清空全部
-            </el-button>
-            <el-button
-              type="primary"
-              size="default"
-              @click="loadHistory"
-            >
-              <el-icon><Refresh /></el-icon>
-              刷新列表
-            </el-button>
+        <div class="card-header history-card-header">
+          <el-alert
+            v-if="historySource === 'server'"
+            type="info"
+            :closable="false"
+            show-icon
+            class="history-patient-alert"
+            title="患者端预测历史"
+            description="仅展示当前登录账号（用户 ID）在监测分析中保存的记录，与本人关联的患者档案一致；不显示其他账号或医护代录的数据。"
+          />
+          <div class="history-toolbar-row">
+            <div class="history-card-title">
+              <el-icon><Document /></el-icon>
+              <span>历史记录</span>
+              <el-tag type="info" effect="plain" round size="small" class="history-count-tag">
+                {{ historyList.length }} 条
+              </el-tag>
+            </div>
+            <div class="history-toolbar">
+              <el-button
+                type="danger"
+                plain
+                size="default"
+                :disabled="selectedRows.length === 0 || historySource === 'server'"
+                @click="handleBatchDelete"
+              >
+                <el-icon><Delete /></el-icon>
+                批量删除 ({{ selectedRows.length }})
+              </el-button>
+              <el-button type="warning" plain size="default" :disabled="historySource === 'server'" @click="handleClearAll">
+                <el-icon><DeleteFilled /></el-icon>
+                清空全部
+              </el-button>
+              <el-button type="primary" size="default" @click="loadHistory">
+                <el-icon><Refresh /></el-icon>
+                刷新
+              </el-button>
+            </div>
           </div>
         </div>
       </template>
 
       <el-table
         :data="historyList"
+        class="history-table"
         style="width: 100%"
         v-loading="loading"
         @selection-change="handleSelectionChange"
         stripe
-        border
       >
         <el-table-column type="selection" width="55" />
         <el-table-column prop="id" label="索引" width="80" sortable>
@@ -63,7 +71,11 @@
         <el-table-column prop="age" label="年龄" width="100" />
         <el-table-column prop="gender" label="性别" width="100">
           <template #default="scope">
-            {{ scope.row.gender === 'M' ? '男' : '女' }}
+            {{
+              scope.row.gender === 'M' || scope.row.gender === 1 || scope.row.gender === '1'
+                ? '男'
+                : '女'
+            }}
           </template>
         </el-table-column>
         <el-table-column prop="bmi" label="BMI" width="100" />
@@ -100,6 +112,7 @@
             <el-button
               type="danger"
               size="small"
+              :disabled="historySource === 'server'"
               @click="handleDelete(scope.row)"
               plain
             >
@@ -110,13 +123,21 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-if="!loading && historyList.length === 0" description="暂无历史记录" />
+      <el-empty
+        v-if="!loading && historyList.length === 0"
+        :description="
+          historySource === 'server'
+            ? '暂无与当前账号用户 ID 一致的预测记录；请在登录后从本人患者档案进入「监测分析」并完成评估（将写入服务端）。'
+            : '在「监测分析」完成评估后会自动保存到此'
+        "
+        :image-size="100"
+      />
     </el-card>
 
     <!-- 趋势分析图表 -->
-    <el-card v-if="historyList.length > 0" shadow="never" style="margin-top: 20px">
+    <el-card v-if="historyList.length > 0" class="hc-card-elevated history-chart-card" shadow="never">
       <template #header>
-        <div class="card-header">
+        <div class="history-chart-head">
           <el-icon><DataAnalysis /></el-icon>
           <span>数据趋势分析</span>
         </div>
@@ -143,7 +164,11 @@
           </el-descriptions-item>
           <el-descriptions-item label="年龄">{{ currentDetail.age }}</el-descriptions-item>
           <el-descriptions-item label="性别">
-            {{ currentDetail.gender === 'M' ? '男' : '女' }}
+            {{
+              currentDetail.gender === 'M' || currentDetail.gender === 1 || currentDetail.gender === '1'
+                ? '男'
+                : '女'
+            }}
           </el-descriptions-item>
           <el-descriptions-item label="身高 (cm)">{{ currentDetail.height }}</el-descriptions-item>
           <el-descriptions-item label="体重 (kg)">{{ currentDetail.weight }}</el-descriptions-item>
@@ -191,6 +216,79 @@
             {{ currentDetail.lf_hf_ratio || 'N/A' }}
           </el-descriptions-item>
         </el-descriptions>
+
+        <template v-if="hasMeaningfulExtendedClinical(currentDetail)">
+          <el-divider>体征、实验室与危险因素</el-divider>
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="血压(mmHg)">
+              <template
+                v-if="
+                  currentDetail.blood_pressure_systolic != null &&
+                  currentDetail.blood_pressure_systolic !== '' ||
+                  currentDetail.blood_pressure_diastolic != null &&
+                  currentDetail.blood_pressure_diastolic !== ''
+                "
+              >
+                {{ currentDetail.blood_pressure_systolic ?? '—' }} /
+                {{ currentDetail.blood_pressure_diastolic ?? '—' }}
+              </template>
+              <template v-else>—</template>
+            </el-descriptions-item>
+            <el-descriptions-item label="静息心率">
+              {{
+                currentDetail.resting_heart_rate != null && currentDetail.resting_heart_rate !== ''
+                  ? currentDetail.resting_heart_rate + ' 次/分'
+                  : '—'
+              }}
+            </el-descriptions-item>
+            <el-descriptions-item label="腰围">
+              {{
+                currentDetail.waist_cm != null && currentDetail.waist_cm !== ''
+                  ? currentDetail.waist_cm + ' cm'
+                  : '—'
+              }}
+            </el-descriptions-item>
+            <el-descriptions-item label="吸烟">
+              {{ smokeLabel(currentDetail.smoke_status) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="总胆固醇">
+              {{ labFmt(currentDetail.total_cholesterol, 'mmol/L') }}
+            </el-descriptions-item>
+            <el-descriptions-item label="LDL-C">
+              {{ labFmt(currentDetail.ldl_cholesterol, 'mmol/L') }}
+            </el-descriptions-item>
+            <el-descriptions-item label="HDL-C">
+              {{ labFmt(currentDetail.hdl_cholesterol, 'mmol/L') }}
+            </el-descriptions-item>
+            <el-descriptions-item label="甘油三酯">
+              {{ labFmt(currentDetail.triglyceride, 'mmol/L') }}
+            </el-descriptions-item>
+            <el-descriptions-item label="空腹血糖">
+              {{ labFmt(currentDetail.fasting_glucose, 'mmol/L') }}
+            </el-descriptions-item>
+            <el-descriptions-item label="HbA1c">
+              {{ labFmt(currentDetail.hba1c, '%') }}
+            </el-descriptions-item>
+            <el-descriptions-item label="体力活动" :span="2">
+              {{ activityLabel(currentDetail.physical_activity) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="糖尿病">
+              {{ yesNoFlag(currentDetail.diabetes) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="高血压(诊断)">
+              {{ yesNoFlag(currentDetail.hypertension_dx) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="血脂异常">
+              {{ yesNoFlag(currentDetail.dyslipidemia) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="早发冠心病家族史">
+              {{ yesNoFlag(currentDetail.family_history_cad) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="胸痛/心绞痛症状" :span="2">
+              {{ yesNoFlag(currentDetail.chest_pain_symptom) }}
+            </el-descriptions-item>
+          </el-descriptions>
+        </template>
       </div>
     </el-dialog>
   </div>
@@ -201,7 +299,77 @@ import { ref, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
 import { Document, Delete, DeleteFilled, Refresh, View as ViewIcon, DataAnalysis } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { storage } from '../utils/storage'
+import apiService from '../services/api'
+import {
+  smokeLabel,
+  activityLabel,
+  yesNoFlag,
+  labFmt,
+  hasMeaningfulExtendedClinical
+} from '../utils/clinicalDisplay'
 import * as echarts from 'echarts'
+
+function parseStoredUser() {
+  try {
+    return JSON.parse(localStorage.getItem('user') || 'null')
+  } catch {
+    return null
+  }
+}
+
+/** 将服务端预测记录转为历史表行结构（与本地 storage 字段对齐） */
+function mapServerPredictionToRow(p) {
+  let pPos = 0.5
+  try {
+    const arr = JSON.parse(p.probability || '[]')
+    if (Array.isArray(arr) && arr.length > 1) pPos = Number(arr[1])
+    else if (Array.isArray(arr) && arr.length === 1) pPos = Number(arr[0])
+  } catch (_) {
+    /* ignore */
+  }
+  if (!Number.isFinite(pPos)) pPos = 0.5
+
+  let clinical = {}
+  if (p.input_features) {
+    try {
+      const parsed = JSON.parse(p.input_features)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        clinical = parsed
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  const ts = p.created_at ? new Date(p.created_at).getTime() : Date.now()
+  const base = {
+    id: p.id,
+    timestamp: ts,
+    date: p.created_at
+      ? new Date(p.created_at).toLocaleString('zh-CN', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        })
+      : new Date(ts).toLocaleString('zh-CN'),
+    riskScore: Math.round(pPos * 100),
+    prediction: p.prediction,
+    probability: [1 - pPos, pPos],
+    confidence: Math.max(pPos, 1 - pPos),
+    method: 'single',
+    modelId: p.model_id,
+    modelIds: null,
+    modelCount: 1,
+    features: p.input_features,
+    user_id: p.user_id,
+    patient_id: p.patient_id,
+    _fromServer: true
+  }
+  return { ...clinical, ...base }
+}
 
 export default {
   name: 'History',
@@ -215,6 +383,8 @@ export default {
   },
   setup() {
     const loading = ref(false)
+    /** local: 浏览器本地；server: 患者账号走 API，仅本人 user_id 的记录 */
+    const historySource = ref('local')
     const historyList = ref([])
     const detailVisible = ref(false)
     const currentDetail = ref(null)
@@ -222,20 +392,34 @@ export default {
     const trendChartRef = ref(null)
     let trendChart = null
 
-    // 从localStorage加载历史记录
-    const loadHistory = () => {
+    const loadHistory = async () => {
       loading.value = true
       try {
-        historyList.value = storage.getHistory()
-        // 按时间戳倒序排列（最新的在前）
-        historyList.value.sort((a, b) => {
-          const timeA = a.timestamp || new Date(a.date || 0).getTime()
-          const timeB = b.timestamp || new Date(b.date || 0).getTime()
-          return timeB - timeA
-        })
-        ElMessage.success(`已加载 ${historyList.value.length} 条记录`)
+        const user = parseStoredUser()
+        if (user && user.role === 'patient') {
+          historySource.value = 'server'
+          const res = await apiService.getMyPatientPredictions({ skip: 0, limit: 500 })
+          const inner = res.data || {}
+          const items = inner.items || []
+          historyList.value = items.map(mapServerPredictionToRow)
+          historyList.value.sort((a, b) => {
+            const timeA = a.timestamp || new Date(a.date || 0).getTime()
+            const timeB = b.timestamp || new Date(b.date || 0).getTime()
+            return timeB - timeA
+          })
+          ElMessage.success(`已加载 ${historyList.value.length} 条记录（用户 ID: ${user.id}）`)
+        } else {
+          historySource.value = 'local'
+          historyList.value = storage.getHistory()
+          historyList.value.sort((a, b) => {
+            const timeA = a.timestamp || new Date(a.date || 0).getTime()
+            const timeB = b.timestamp || new Date(b.date || 0).getTime()
+            return timeB - timeA
+          })
+          ElMessage.success(`已加载 ${historyList.value.length} 条记录`)
+        }
       } catch (error) {
-        ElMessage.error('加载历史记录失败: ' + error.message)
+        ElMessage.error('加载历史记录失败: ' + (error.message || '请求失败'))
       } finally {
         loading.value = false
       }
@@ -267,6 +451,10 @@ export default {
     }
 
     const handleDelete = async (row) => {
+      if (historySource.value === 'server') {
+        ElMessage.info('患者端预测记录保存在服务器，暂不支持在此页删除')
+        return
+      }
       try {
         await ElMessageBox.confirm(
           `确定要删除记录 #${row.id} 吗？`,
@@ -294,6 +482,10 @@ export default {
     }
 
     const handleBatchDelete = async () => {
+      if (historySource.value === 'server') {
+        ElMessage.info('患者端预测记录保存在服务器，暂不支持在此页删除')
+        return
+      }
       if (selectedRows.value.length === 0) {
         ElMessage.warning('请先选择要删除的记录')
         return
@@ -324,6 +516,10 @@ export default {
     }
 
     const handleClearAll = async () => {
+      if (historySource.value === 'server') {
+        ElMessage.info('患者端预测记录保存在服务器，暂不支持在此页清空')
+        return
+      }
       if (historyList.value.length === 0) {
         ElMessage.warning('没有可清空的记录')
         return
@@ -533,6 +729,7 @@ export default {
 
     return {
       loading,
+      historySource,
       historyList,
       detailVisible,
       currentDetail,
@@ -545,20 +742,40 @@ export default {
       handleSelectionChange,
       handleBatchDelete,
       handleClearAll,
-      loadHistory
+      loadHistory,
+      smokeLabel,
+      activityLabel,
+      yesNoFlag,
+      labFmt,
+      hasMeaningfulExtendedClinical
     }
   }
 }
 </script>
 
 <style scoped>
-.history {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 20px;
+.history-card-header {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
 }
 
-.card-header {
+.history-card-header > .history-patient-alert {
+  width: 100%;
+}
+
+.history-card-header .history-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 20px;
+  width: 100%;
+}
+
+.history-card-title {
   display: flex;
   align-items: center;
   font-size: 18px;
@@ -566,61 +783,65 @@ export default {
   color: #303133;
 }
 
-.card-header .el-icon {
+.history-card-title .el-icon {
   margin-right: 10px;
   font-size: 24px;
   color: #409eff;
 }
 
-:deep(.el-card) {
-  border-radius: 12px;
+.history-count-tag {
+  margin-left: 12px;
+}
+
+.history-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.history-chart-card {
+  margin-top: 22px;
+}
+
+.history-chart-head {
+  display: flex;
+  align-items: center;
+  font-size: 17px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.history-chart-head .el-icon {
+  margin-right: 10px;
+  font-size: 22px;
+  color: #409eff;
 }
 
 :deep(.el-card__header) {
-  padding: 20px 24px;
+  padding: 18px 22px;
   border-bottom: 1px solid #f0f2f5;
-  background: #fafbfc;
+  background: var(--hc-fill-elevated, linear-gradient(180deg, #fafbfc 0%, #fff 100%));
 }
 
-:deep(.el-tabs__header) {
-  margin: 0;
-  background: #fff;
-  border-radius: 8px;
-}
-
-:deep(.el-tabs__nav-wrap) {
-  padding: 0 24px;
-}
-
-:deep(.el-tabs__item) {
-  font-weight: 500;
-  padding: 0 24px;
-  height: 50px;
-  line-height: 50px;
-}
-
-:deep(.el-table) {
-  border-radius: 8px;
+:deep(.history-table) {
+  border-radius: var(--hc-radius-md, 8px);
   overflow: hidden;
 }
 
-:deep(.el-table__header) {
-  background: #fafbfc;
+:deep(.history-table .el-table__inner-wrapper::before) {
+  display: none;
 }
 
-:deep(.el-table th) {
-  background: #fafbfc !important;
+:deep(.history-table th.el-table__cell) {
+  background: #f5f7fa !important;
   font-weight: 600;
   color: #606266;
-  border-bottom: 2px solid #e4e7ed;
+  font-size: 13px;
 }
 
-:deep(.el-table td) {
-  border-bottom: 1px solid #f0f2f5;
-}
-
-:deep(.el-table__row:hover) {
-  background: #f5f7fa;
+:deep(.history-table .el-table__row:hover > td.el-table__cell) {
+  background: #f0f7ff !important;
 }
 
 :deep(.el-button) {

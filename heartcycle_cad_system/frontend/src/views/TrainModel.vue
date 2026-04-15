@@ -1,6 +1,6 @@
 <template>
-  <div class="train-model">
-    <el-card shadow="never">
+  <div class="train-model hc-page-shell">
+    <el-card class="hc-card-elevated" shadow="never">
       <template #header>
         <div class="card-header">
           <el-icon><Setting /></el-icon>
@@ -257,10 +257,10 @@
                 <el-radio value="voting">Voting集成</el-radio>
               </el-radio-group>
               <div style="margin-top: 10px; font-size: 12px; color: #909399">
-                <p v-if="trainConfig.model_type === 'xgb'">✨ XGBoost: 高性能梯度提升算法，通常有最好的预测效果</p>
-                <p v-if="trainConfig.model_type === 'lgb'">⚡ LightGBM: 训练速度快，内存占用少</p>
-                <p v-if="trainConfig.model_type === 'stacking'">🎯 Stacking: 组合多个模型，提升预测精度</p>
-                <p v-if="trainConfig.model_type === 'voting'">🗳️ Voting: 多个模型投票决策，稳定性好</p>
+                <p v-if="trainConfig.model_type === 'xgb'">XGBoost: 高性能梯度提升算法，通常有最好的预测效果</p>
+                <p v-if="trainConfig.model_type === 'lgb'">LightGBM: 训练速度快，内存占用少</p>
+                <p v-if="trainConfig.model_type === 'stacking'">Stacking: 组合多个模型，提升预测精度</p>
+                <p v-if="trainConfig.model_type === 'voting'">Voting: 多个模型投票决策，稳定性好</p>
               </div>
             </el-form-item>
 
@@ -310,12 +310,25 @@
               />
             </el-form-item>
 
+            <el-form-item label="模型名称">
+              <el-input
+                v-model="trainConfig.display_name"
+                maxlength="100"
+                show-word-limit
+                clearable
+                placeholder="展示在「模型版本管理」；留空则使用「类型_训练模型」"
+                style="width: 400px"
+              />
+            </el-form-item>
+
             <el-form-item label="模型描述">
               <el-input
                 v-model="trainConfig.description"
                 type="textarea"
                 :rows="3"
-                placeholder="可选：为模型添加描述信息"
+                maxlength="2000"
+                show-word-limit
+                placeholder="可选：说明数据范围、实验目的等，将在模型版本管理页展示"
                 style="width: 400px"
               />
             </el-form-item>
@@ -388,6 +401,12 @@
                 </el-descriptions-item>
                 <el-descriptions-item label="随机种子">
                   {{ trainConfig.random_state }}
+                </el-descriptions-item>
+                <el-descriptions-item label="模型名称（管理页）" :span="2">
+                  {{ trainConfig.display_name?.trim() || '（默认名称）' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="模型描述" :span="2">
+                  {{ trainConfig.description?.trim() || '—' }}
                 </el-descriptions-item>
               </el-descriptions>
               <div style="text-align: center; margin-top: 30px">
@@ -478,6 +497,23 @@
                   重新训练
                 </el-button>
               </div>
+              <div
+                v-if="trainingResult.success && canPublishToRegistry"
+                class="publish-registry-inline"
+                style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #ebeef5"
+              >
+                <el-checkbox v-model="versionPublishSetActive">登记同时设为该名称下的激活版本</el-checkbox>
+                <div style="margin-top: 10px">
+                  <el-button
+                    type="success"
+                    :loading="publishingToRegistry"
+                    @click="publishTrainingToModelVersions"
+                  >
+                    保存并发布到模型版本
+                  </el-button>
+                  <el-button text type="primary" @click="openModelVersions">打开模型版本页</el-button>
+                </div>
+              </div>
           </div>
         </div>
 
@@ -537,6 +573,29 @@
               :global-importance="shapGlobalData"
               style="margin-top: 20px"
             />
+
+            <el-divider v-if="trainingResult && trainingResult.success && canPublishToRegistry">模型版本发布</el-divider>
+            <div
+              v-if="trainingResult && trainingResult.success && canPublishToRegistry"
+              class="publish-registry-block"
+              style="margin-bottom: 20px"
+            >
+              <p style="color: #606266; font-size: 13px; margin: 0 0 12px">
+                将本次训练的 joblib 复制到模型版本库，便于在「模型版本」页统一管理与设为激活预测模型。
+              </p>
+              <el-checkbox v-model="versionPublishSetActive">登记同时设为该名称下的激活版本</el-checkbox>
+              <div style="margin-top: 12px">
+                <el-button
+                  type="success"
+                  size="large"
+                  :loading="publishingToRegistry"
+                  @click="publishTrainingToModelVersions"
+                >
+                  保存并发布到模型版本
+                </el-button>
+                <el-button size="large" @click="openModelVersions">打开模型版本页</el-button>
+              </div>
+            </div>
 
             <div style="margin-top: 30px">
               <el-button type="primary" size="large" @click="goToMonitor">
@@ -605,6 +664,8 @@ export default {
     const training = ref(false)
     const trainingStarted = ref(false)
     const trainingResult = ref(null)
+    const versionPublishSetActive = ref(true)
+    const publishingToRegistry = ref(false)
     const shapGlobalData = ref(null)
     const trainingTaskId = ref(null)
     const trainingProgress = ref(0)
@@ -626,6 +687,7 @@ export default {
       random_state: 42,
       use_smote: true,  // 默认启用SMOTE
       optimize_hyperparams: false,  // 默认不启用超参数优化
+      display_name: '',
       description: ''
     })
 
@@ -928,7 +990,9 @@ export default {
             cv_folds: trainConfig.value.cv_folds,
             random_state: trainConfig.value.random_state,
             use_smote: trainConfig.value.use_smote,
-            optimize_hyperparams: trainConfig.value.optimize_hyperparams
+            optimize_hyperparams: trainConfig.value.optimize_hyperparams,
+            display_name: trainConfig.value.display_name?.trim() || undefined,
+            model_description: trainConfig.value.description?.trim() || undefined
           })
         } else {
           // H5模式 - 如果选择了文件但还没有上传，先上传
@@ -998,7 +1062,9 @@ export default {
             optimize_hyperparams: trainConfig.value.optimize_hyperparams,
             use_existing_rpeaks: h5Config.value.use_existing_rpeaks,
             extract_hrv: h5Config.value.extract_hrv,
-            extract_clinical: h5Config.value.extract_clinical
+            extract_clinical: h5Config.value.extract_clinical,
+            display_name: trainConfig.value.display_name?.trim() || undefined,
+            model_description: trainConfig.value.description?.trim() || undefined
           })
           
           // 处理响应：响应拦截器可能已经处理了格式
@@ -1082,6 +1148,48 @@ export default {
       nextTick(() => {
         initCharts()
       })
+    }
+
+    const canPublishToRegistry = computed(() => {
+      try {
+        const raw = localStorage.getItem('user')
+        if (!raw) return false
+        const u = JSON.parse(raw)
+        const r = (u.role || '').toLowerCase()
+        return r === 'admin' || r === 'researcher'
+      } catch {
+        return false
+      }
+    })
+
+    const openModelVersions = () => {
+      router.push('/model-versions')
+    }
+
+    const publishTrainingToModelVersions = async () => {
+      if (!trainingResult.value?.success || !trainingResult.value.model_id) {
+        ElMessage.warning('暂无可用训练结果')
+        return
+      }
+      publishingToRegistry.value = true
+      try {
+        const res = await apiService.registerTrainingToModelVersions({
+          model_id: trainingResult.value.model_id,
+          model_type: trainingResult.value.model_type,
+          display_name: trainConfig.value.display_name || undefined,
+          model_description: trainConfig.value.description || undefined,
+          n_samples: trainingResult.value.n_samples,
+          n_features: trainingResult.value.n_features,
+          metrics: trainingResult.value.metrics,
+          feature_names: trainingResult.value.feature_names,
+          set_active: versionPublishSetActive.value
+        })
+        ElMessage.success(res.message || '已发布到模型版本')
+      } catch (error) {
+        ElMessage.error(error.userMessage || error.message || '发布到模型版本失败')
+      } finally {
+        publishingToRegistry.value = false
+      }
     }
 
     // 初始化图表
@@ -1603,6 +1711,11 @@ export default {
       training,
       trainingStarted,
       trainingResult,
+      versionPublishSetActive,
+      publishingToRegistry,
+      canPublishToRegistry,
+      openModelVersions,
+      publishTrainingToModelVersions,
       shapGlobalData,
       handleFeatureFileChange,
       handleFeatureFileRemove,
@@ -1644,9 +1757,7 @@ export default {
 
 <style scoped>
 .train-model {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 20px;
+  padding-top: 4px;
 }
 
 .card-header {

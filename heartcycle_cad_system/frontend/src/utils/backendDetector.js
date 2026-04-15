@@ -28,20 +28,20 @@ async function checkBackendPort(port) {
       const data = await response.json()
       // 验证是否是我们的后端服务
       if (data.version && data.status) {
-        console.log(`✅ 端口 ${port} 验证成功:`, data)
+        console.log(`端口 ${port} 验证成功:`, data)
         currentWorkingPort = port
         return true
       } else {
-        console.log(`⚠️ 端口 ${port} 响应格式不正确:`, data)
+        console.log(`端口 ${port} 响应格式不正确:`, data)
       }
     } else {
-      console.log(`⚠️ 端口 ${port} 响应状态码: ${response.status}`)
+      console.log(`端口 ${port} 响应状态码: ${response.status}`)
     }
     return false
   } catch (error) {
     // 只在非超时错误时记录详细信息
     if (error.name !== 'AbortError') {
-      console.log(`⚠️ 端口 ${port} 检测失败: ${error.message}`)
+      console.log(`端口 ${port} 检测失败: ${error.message}`)
     }
     return false
   }
@@ -49,25 +49,26 @@ async function checkBackendPort(port) {
 
 /**
  * 自动检测后端服务端口
- * @param {number} startPort - 起始端口（默认8000）
- * @param {number} maxAttempts - 最大尝试次数（默认10）
+ * @param {number} startPort - 起始端口（默认8001）
+ * @param {number} maxAttempts - 最大尝试次数（默认9）
  * @returns {Promise<number|null>} - 找到的端口号，未找到返回null
  */
-export async function detectBackendPort(startPort = 8000, maxAttempts = 10) {
-  console.log('🔍 正在检测后端服务端口...')
+export async function detectBackendPort(startPort = 8001, maxAttempts = 9) {
+  console.log('正在检测后端服务端口...')
 
-  for (let port = startPort; port < startPort + maxAttempts; port++) {
+  // 倒序检测：从 8009 到 8001
+  for (let port = startPort + maxAttempts - 1; port >= startPort; port--) {
     console.log(`  检测端口 ${port}...`)
 
     if (await checkBackendPort(port)) {
-      console.log(`✅ 找到后端服务: http://localhost:${port}`)
+      console.log(`找到后端服务: http://localhost:${port}`)
       // 保存到localStorage
       localStorage.setItem('lastWorkingPort', port.toString())
       return port
     }
   }
 
-  console.error(`❌ 未找到后端服务 (尝试了端口 ${startPort}-${startPort + maxAttempts - 1})`)
+  console.error(`未找到后端服务 (尝试了端口 ${startPort + maxAttempts - 1}-${startPort})`)
   return null
 }
 
@@ -79,7 +80,7 @@ export async function detectBackendPort(startPort = 8000, maxAttempts = 10) {
 export async function getApiBaseUrl() {
   // 优先使用环境变量配置
   if (process.env.VUE_APP_API_BASE_URL) {
-    console.log('📌 使用配置的API地址:', process.env.VUE_APP_API_BASE_URL)
+    console.log('使用配置的API地址:', process.env.VUE_APP_API_BASE_URL)
     return process.env.VUE_APP_API_BASE_URL
   }
 
@@ -88,12 +89,12 @@ export async function getApiBaseUrl() {
 
   if (port) {
     const baseUrl = `http://localhost:${port}/api/v1`
-    console.log('🎯 自动检测到API地址:', baseUrl)
+    console.log('自动检测到API地址:', baseUrl)
     return baseUrl
   }
 
   // 检测失败，使用默认值
-  console.warn('⚠️ 使用默认API地址: http://localhost:8000/api/v1')
+  console.warn('使用默认API地址: http://localhost:8000/api/v1')
   return 'http://localhost:8000/api/v1'
 }
 
@@ -119,12 +120,12 @@ export async function getApiBaseUrlFast() {
   // 尝试上次检测到的端口
   const lastPort = getLastDetectedPort()
   if (lastPort) {
-    console.log(`🔄 尝试上次的端口 ${lastPort}...`)
+    console.log(`尝试上次的端口 ${lastPort}...`)
     if (await checkBackendPort(lastPort)) {
-      console.log(`✅ 端口 ${lastPort} 仍然可用`)
+      console.log(`端口 ${lastPort} 仍然可用`)
       return `http://localhost:${lastPort}/api/v1`
     }
-    console.log(`⚠️ 端口 ${lastPort} 不可用，重新检测...`)
+    console.log(`端口 ${lastPort} 不可用，重新检测...`)
     // 清除无效的缓存
     localStorage.removeItem('lastWorkingPort')
   }

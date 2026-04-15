@@ -1,6 +1,6 @@
 <template>
   <div v-if="showStatus" class="backend-status" :class="statusClass">
-    <span class="status-icon">{{ statusIcon }}</span>
+    <span class="status-dot" :class="`dot-${status}`" aria-hidden="true" />
     <span class="status-text">{{ statusText }}</span>
     <span v-if="apiUrl" class="status-url">{{ apiUrl }}</span>
   </div>
@@ -22,18 +22,6 @@ export default {
   computed: {
     statusClass() {
       return `status-${this.status}`
-    },
-    statusIcon() {
-      switch (this.status) {
-        case 'checking':
-          return '🔍'
-        case 'connected':
-          return '✅'
-        case 'disconnected':
-          return '❌'
-        default:
-          return '⚠️'
-      }
     },
     statusText() {
       switch (this.status) {
@@ -119,8 +107,34 @@ export default {
   border: 1px solid #f5c6cb;
 }
 
-.status-icon {
-  font-size: 16px;
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-checking {
+  background-color: #856404;
+  animation: pulse-dot 1s ease-in-out infinite;
+}
+
+.dot-connected {
+  background-color: #28a745;
+}
+
+.dot-disconnected {
+  background-color: #c82333;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .status-text {

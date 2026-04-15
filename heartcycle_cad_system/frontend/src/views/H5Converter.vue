@@ -1,6 +1,6 @@
 <template>
-  <div class="h5-converter-container">
-    <el-card class="header-card">
+  <div class="h5-converter-container hc-page-shell">
+    <el-card class="header-card hc-card-elevated" shadow="never">
       <template #header>
         <div class="card-header">
           <span class="title">
@@ -36,7 +36,7 @@
     </el-card>
 
     <!-- 上传区域 -->
-    <el-card class="upload-card">
+    <el-card class="upload-card hc-card-elevated" shadow="never">
       <template #header>
         <span>步骤1：上传H5文件</span>
       </template>
@@ -80,7 +80,7 @@
     </el-card>
 
     <!-- 格式检查结果 -->
-    <el-card class="result-card" v-if="checkResults.length > 0">
+    <el-card class="result-card hc-card-elevated" shadow="never" v-if="checkResults.length > 0">
       <template #header>
         <span>步骤2：格式检查结果</span>
       </template>
@@ -170,7 +170,7 @@
     </el-card>
 
     <!-- 转换结果 -->
-    <el-card class="result-card" v-if="convertResult">
+    <el-card class="result-card hc-card-elevated" shadow="never" v-if="convertResult">
       <template #header>
         <span>步骤3：转换结果</span>
       </template>
@@ -261,35 +261,35 @@
     </el-card>
 
     <!-- 使用指南 -->
-    <el-card class="guide-card">
+    <el-card class="guide-card hc-card-elevated" shadow="never">
       <template #header>
         <span>使用指南</span>
       </template>
 
       <el-timeline>
         <el-timeline-item timestamp="步骤1" placement="top">
-          <el-card>
+          <el-card class="hc-card-elevated" shadow="never">
             <h4>上传H5文件</h4>
             <p>支持批量上传，可以同时选择多个文件</p>
           </el-card>
         </el-timeline-item>
 
         <el-timeline-item timestamp="步骤2" placement="top">
-          <el-card>
+          <el-card class="hc-card-elevated" shadow="never">
             <h4>检查文件格式</h4>
             <p>系统会自动检测每个文件的格式类型</p>
           </el-card>
         </el-timeline-item>
 
         <el-timeline-item timestamp="步骤3" placement="top">
-          <el-card>
+          <el-card class="hc-card-elevated" shadow="never">
             <h4>转换MATLAB格式</h4>
             <p>对于MATLAB格式的文件，点击"开始转换"按钮</p>
           </el-card>
         </el-timeline-item>
 
         <el-timeline-item timestamp="步骤4" placement="top">
-          <el-card>
+          <el-card class="hc-card-elevated" shadow="never">
             <h4>使用转换后的文件</h4>
             <p>转换成功后，可以直接前往模型训练页面使用这些文件</p>
           </el-card>
@@ -445,9 +445,7 @@ const resetConverter = () => {
 
 <style scoped>
 .h5-converter-container {
-  padding: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
+  padding-top: 4px;
 }
 
 .card-header {

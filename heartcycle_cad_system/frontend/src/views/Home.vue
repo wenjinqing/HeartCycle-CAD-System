@@ -1,5 +1,5 @@
 <template>
-  <div class="home">
+  <div class="home hc-page-shell">
     <el-row :gutter="20">
       <el-col :span="24">
         <el-card class="welcome-card">
@@ -50,7 +50,7 @@
     <!-- 工具箱 -->
     <el-row :gutter="24" style="margin-top: 30px">
       <el-col :span="24">
-        <el-card shadow="never" style="border-radius: 12px">
+        <el-card class="hc-card-elevated" shadow="never">
           <template #header>
             <div class="card-header">
               <el-icon><Tools /></el-icon>
@@ -87,7 +87,7 @@
 
     <el-row :gutter="24" style="margin-top: 30px">
       <el-col :span="24">
-        <el-card shadow="never" style="border-radius: 12px">
+        <el-card class="hc-card-elevated" shadow="never">
           <template #header>
             <div class="card-header">
               <el-icon><Guide /></el-icon>
@@ -136,12 +136,6 @@ export default {
 </script>
 
 <style scoped>
-.home {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
 .welcome-card {
   text-align: center;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);

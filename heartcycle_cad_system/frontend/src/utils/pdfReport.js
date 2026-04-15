@@ -2,6 +2,7 @@
  * PDF报告生成工具
  */
 import jsPDF from 'jspdf'
+import { hasMeaningfulExtendedClinical } from './clinicalDisplay'
 
 /**
  * 生成风险评估PDF报告
@@ -123,8 +124,49 @@ export async function generatePDFReport({ element: _element, data, onProgress })
       if (fd.bmi) pdf.text(`BMI: ${fd.bmi}`, margin + 5, yPosition), yPosition += 7
       yPosition += 5
     }
+
+    if (data.formData && hasMeaningfulExtendedClinical(data.formData)) {
+      if (yPosition > pageHeight - 80) {
+        pdf.addPage()
+        yPosition = margin
+      }
+      pdf.setFontSize(16)
+      pdf.setFont('helvetica', 'bold')
+      pdf.text('4. 体征与实验室', margin, yPosition)
+      yPosition += 10
+      pdf.setFontSize(12)
+      pdf.setFont('helvetica', 'normal')
+      const fd = data.formData
+      const line = (t) => {
+        if (yPosition > pageHeight - 20) {
+          pdf.addPage()
+          yPosition = margin
+        }
+        pdf.text(t, margin + 5, yPosition)
+        yPosition += 7
+      }
+      if (fd.blood_pressure_systolic != null || fd.blood_pressure_diastolic != null) {
+        line(`血压: ${fd.blood_pressure_systolic ?? '-'}/${fd.blood_pressure_diastolic ?? '-'} mmHg`)
+      }
+      if (fd.resting_heart_rate != null) line(`静息心率: ${fd.resting_heart_rate} 次/分`)
+      if (fd.waist_cm != null) line(`腰围: ${fd.waist_cm} cm`)
+      const yn = (v) => (v === 1 ? '是' : '否')
+      if (fd.total_cholesterol != null) line(`总胆固醇: ${fd.total_cholesterol} mmol/L`)
+      if (fd.ldl_cholesterol != null) line(`LDL-C: ${fd.ldl_cholesterol} mmol/L`)
+      if (fd.hdl_cholesterol != null) line(`HDL-C: ${fd.hdl_cholesterol} mmol/L`)
+      if (fd.triglyceride != null) line(`甘油三酯: ${fd.triglyceride} mmol/L`)
+      if (fd.fasting_glucose != null) line(`空腹血糖: ${fd.fasting_glucose} mmol/L`)
+      if (fd.hba1c != null) line(`HbA1c: ${fd.hba1c} %`)
+      const sm = { never: '从不', former: '已戒', current: '目前吸烟' }
+      if (fd.smoke_status) line(`吸烟: ${sm[fd.smoke_status] || fd.smoke_status}`)
+      const act = { unknown: '不详', sedentary: '久坐少动', light: '轻度', moderate: '中度', heavy: '重度' }
+      if (fd.physical_activity) line(`体力活动: ${act[fd.physical_activity] || fd.physical_activity}`)
+      line(`糖尿病: ${yn(fd.diabetes)}  高血压(诊断): ${yn(fd.hypertension_dx)}  血脂异常: ${yn(fd.dyslipidemia)}`)
+      line(`早发冠心病家族史: ${yn(fd.family_history_cad)}  胸痛/心绞痛: ${yn(fd.chest_pain_symptom)}`)
+      yPosition += 5
+    }
     
-    // 4. HRV特征
+    // 5. HRV特征
     if (data.formData && (data.formData.mean_rr || data.formData.sdnn)) {
       if (yPosition > pageHeight - 80) {
         pdf.addPage()
@@ -133,7 +175,7 @@ export async function generatePDFReport({ element: _element, data, onProgress })
       
       pdf.setFontSize(16)
       pdf.setFont('helvetica', 'bold')
-      pdf.text('4. HRV特征', margin, yPosition)
+      pdf.text('5. HRV特征', margin, yPosition)
       yPosition += 10
       
       pdf.setFontSize(12)
@@ -149,7 +191,7 @@ export async function generatePDFReport({ element: _element, data, onProgress })
       yPosition += 5
     }
     
-    // 5. 健康建议
+    // 6. 健康建议
     if (onProgress) onProgress(85, '正在生成健康建议...')
     if (yPosition > pageHeight - 60) {
       pdf.addPage()
@@ -158,7 +200,7 @@ export async function generatePDFReport({ element: _element, data, onProgress })
     
     pdf.setFontSize(16)
     pdf.setFont('helvetica', 'bold')
-    pdf.text('5. 健康建议', margin, yPosition)
+    pdf.text('6. 健康建议', margin, yPosition)
     yPosition += 10
     
     pdf.setFontSize(11)

@@ -1,0 +1,73 @@
+/**
+ * 全局视觉变量与通用页面骨架（与 Element Plus 并存）
+ */
+:root {
+  --hc-radius-lg: 12px;
+  --hc-radius-md: 8px;
+  --hc-shadow-soft: 0 2px 14px rgba(15, 23, 42, 0.06);
+  --hc-shadow-soft-hover: 0 10px 28px rgba(64, 158, 255, 0.14);
+  --hc-border-subtle: #ebeef5;
+  --hc-fill-elevated: linear-gradient(180deg, #fafbfc 0%, #ffffff 100%);
+}
+
+.hc-page-shell {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px 18px 36px;
+}
+
+@media (min-width: 768px) {
+  .hc-page-shell {
+    padding: 28px 22px 40px;
+  }
+}
+
+/** 仪表板等需要更宽容器的页面 */
+.hc-page-shell.hc-page-shell--wide {
+  max-width: 1600px;
+}
+
+.hc-card-elevated {
+  border-radius: var(--hc-radius-lg) !important;
+  border: 1px solid var(--hc-border-subtle);
+  box-shadow: var(--hc-shadow-soft);
+  transition: box-shadow 0.22s ease, border-color 0.22s ease;
+}
+
+.hc-card-elevated:hover {
+  box-shadow: var(--hc-shadow-soft-hover);
+  border-color: #dcdfe6;
+}
+
+.hc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  width: 100%;
+}
+
+.hc-toolbar-spacer {
+  margin-left: auto;
+}
+
+.hc-help-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  line-height: 1.75;
+  color: #606266;
+  font-size: 14px;
+}
+
+.hc-help-list li + li {
+  margin-top: 4px;
+}
+
+.hc-help-footnote {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px dashed #e4e7ed;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.6;
+}

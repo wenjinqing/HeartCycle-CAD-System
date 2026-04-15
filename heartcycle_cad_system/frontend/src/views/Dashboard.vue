@@ -1,6 +1,6 @@
 <template>
-  <div class="dashboard">
-    <el-card shadow="never">
+  <div class="dashboard hc-page-shell hc-page-shell--wide">
+    <el-card class="hc-card-elevated" shadow="never">
       <template #header>
         <div class="card-header">
           <el-icon><DataBoard /></el-icon>
@@ -70,16 +70,16 @@
       </el-row>
 
       <!-- 模型列表和性能指标 -->
-      <el-card shadow="never" style="margin-top: 20px">
+      <el-card class="hc-card-elevated" shadow="never" style="margin-top: 20px">
         <template #header>
           <span>模型性能详情</span>
         </template>
         <el-table
           :data="modelList"
+          class="dashboard-model-table"
           style="width: 100%"
           v-loading="loading"
           stripe
-          border
           :row-key="getRowKey"
         >
           <el-table-column type="expand" width="50">
@@ -90,48 +90,49 @@
                   <el-col :span="24">
                     <div class="expand-section">
                       <h4 class="expand-title">性能指标详情</h4>
+                      <p class="expand-metric-hint">主数字为 <strong>K 折交叉验证均值</strong>（泛化估计）；全量训练集回测见下方「模型训练信息」。</p>
                       <el-row :gutter="15">
                         <el-col :span="6">
                           <div class="expand-metric-card">
-                            <div class="expand-metric-label">准确率</div>
+                            <div class="expand-metric-label">准确率（CV 均值）</div>
                             <div class="expand-metric-value">
-                              {{ formatMetric(row.metrics?.final_accuracy || row.metrics?.accuracy?.mean) }}
+                              {{ formatMetric(primaryMetric(row.metrics, 'accuracy', 'final_accuracy')) }}
                             </div>
-                            <div class="expand-metric-cv" v-if="row.metrics?.accuracy">
-                              CV: {{ formatScore(row.metrics.accuracy.mean) }} ± {{ formatScore(row.metrics.accuracy.std) }}
+                            <div class="expand-metric-cv" v-if="row.metrics?.accuracy && row.metrics.accuracy.std != null">
+                              标准差: ± {{ formatScore(row.metrics.accuracy.std) }}
                             </div>
                           </div>
                         </el-col>
                         <el-col :span="6">
                           <div class="expand-metric-card">
-                            <div class="expand-metric-label">精确率</div>
+                            <div class="expand-metric-label">精确率（CV 均值）</div>
                             <div class="expand-metric-value">
-                              {{ formatMetric(row.metrics?.final_precision || row.metrics?.precision?.mean) }}
+                              {{ formatMetric(primaryMetric(row.metrics, 'precision', 'final_precision')) }}
                             </div>
-                            <div class="expand-metric-cv" v-if="row.metrics?.precision">
-                              CV: {{ formatScore(row.metrics.precision.mean) }} ± {{ formatScore(row.metrics.precision.std) }}
+                            <div class="expand-metric-cv" v-if="row.metrics?.precision && row.metrics.precision.std != null">
+                              标准差: ± {{ formatScore(row.metrics.precision.std) }}
                             </div>
                           </div>
                         </el-col>
                         <el-col :span="6">
                           <div class="expand-metric-card">
-                            <div class="expand-metric-label">召回率</div>
+                            <div class="expand-metric-label">召回率（CV 均值）</div>
                             <div class="expand-metric-value">
-                              {{ formatMetric(row.metrics?.final_recall || row.metrics?.recall?.mean) }}
+                              {{ formatMetric(primaryMetric(row.metrics, 'recall', 'final_recall')) }}
                             </div>
-                            <div class="expand-metric-cv" v-if="row.metrics?.recall">
-                              CV: {{ formatScore(row.metrics.recall.mean) }} ± {{ formatScore(row.metrics.recall.std) }}
+                            <div class="expand-metric-cv" v-if="row.metrics?.recall && row.metrics.recall.std != null">
+                              标准差: ± {{ formatScore(row.metrics.recall.std) }}
                             </div>
                           </div>
                         </el-col>
                         <el-col :span="6">
                           <div class="expand-metric-card">
-                            <div class="expand-metric-label">F1（F1分数）</div>
+                            <div class="expand-metric-label">F1（CV 均值）</div>
                             <div class="expand-metric-value">
-                              {{ formatMetric(row.metrics?.final_f1 || row.metrics?.f1?.mean) }}
+                              {{ formatMetric(primaryMetric(row.metrics, 'f1', 'final_f1')) }}
                             </div>
-                            <div class="expand-metric-cv" v-if="row.metrics?.f1">
-                              CV: {{ formatScore(row.metrics.f1.mean) }} ± {{ formatScore(row.metrics.f1.std) }}
+                            <div class="expand-metric-cv" v-if="row.metrics?.f1 && row.metrics.f1.std != null">
+                              标准差: ± {{ formatScore(row.metrics.f1.std) }}
                             </div>
                           </div>
                         </el-col>
@@ -139,12 +140,12 @@
                       <el-row :gutter="15" style="margin-top: 15px">
                         <el-col :span="6">
                           <div class="expand-metric-card">
-                            <div class="expand-metric-label">ROC AUC（受试者工作特征曲线下面积）</div>
+                            <div class="expand-metric-label">ROC AUC（CV 均值）</div>
                             <div class="expand-metric-value">
-                              {{ formatMetric(row.metrics?.final_roc_auc || row.metrics?.roc_auc?.mean) }}
+                              {{ formatMetric(primaryMetric(row.metrics, 'roc_auc', 'final_roc_auc')) }}
                             </div>
-                            <div class="expand-metric-cv" v-if="row.metrics?.roc_auc && row.metrics.roc_auc.mean !== null">
-                              CV: {{ formatScore(row.metrics.roc_auc.mean) }} ± {{ formatScore(row.metrics.roc_auc.std) }}
+                            <div class="expand-metric-cv" v-if="row.metrics?.roc_auc && row.metrics.roc_auc.mean !== null && row.metrics.roc_auc.std != null">
+                              标准差: ± {{ formatScore(row.metrics.roc_auc.std) }}
                             </div>
                           </div>
                         </el-col>
@@ -242,29 +243,29 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="准确率" width="120" align="center" sortable>
+          <el-table-column label="准确率(CV)" width="120" align="center" sortable>
             <template #default="{ row }">
-              {{ formatMetric(row.metrics?.final_accuracy || row.metrics?.accuracy?.mean) }}
+              {{ formatMetric(primaryMetric(row.metrics, 'accuracy', 'final_accuracy')) }}
             </template>
           </el-table-column>
-          <el-table-column label="精确率" width="120" align="center" sortable>
+          <el-table-column label="精确率(CV)" width="120" align="center" sortable>
             <template #default="{ row }">
-              {{ formatMetric(row.metrics?.final_precision || row.metrics?.precision?.mean) }}
+              {{ formatMetric(primaryMetric(row.metrics, 'precision', 'final_precision')) }}
             </template>
           </el-table-column>
-          <el-table-column label="召回率" width="120" align="center" sortable>
+          <el-table-column label="召回率(CV)" width="120" align="center" sortable>
             <template #default="{ row }">
-              {{ formatMetric(row.metrics?.final_recall || row.metrics?.recall?.mean) }}
+              {{ formatMetric(primaryMetric(row.metrics, 'recall', 'final_recall')) }}
             </template>
           </el-table-column>
-          <el-table-column label="F1（F1分数）" width="120" align="center" sortable>
+          <el-table-column label="F1(CV)" width="120" align="center" sortable>
             <template #default="{ row }">
-              {{ formatMetric(row.metrics?.final_f1 || row.metrics?.f1?.mean) }}
+              {{ formatMetric(primaryMetric(row.metrics, 'f1', 'final_f1')) }}
             </template>
           </el-table-column>
-          <el-table-column label="ROC AUC（受试者工作特征曲线下面积）" width="200" align="center" sortable>
+          <el-table-column label="ROC AUC(CV)" width="200" align="center" sortable>
             <template #default="{ row }">
-              {{ formatMetric(row.metrics?.final_roc_auc || row.metrics?.roc_auc?.mean) }}
+              {{ formatMetric(primaryMetric(row.metrics, 'roc_auc', 'final_roc_auc')) }}
             </template>
           </el-table-column>
           <el-table-column prop="created_at" label="创建时间" width="180">
@@ -334,7 +335,7 @@
       >
         <div v-if="currentModel">
           <!-- 基本信息 -->
-          <el-card shadow="never" style="margin-bottom: 20px">
+          <el-card class="hc-card-elevated" shadow="never" style="margin-bottom: 20px">
             <template #header>
               <span style="font-weight: 600">基本信息</span>
             </template>
@@ -360,52 +361,52 @@
           </el-card>
 
           <!-- 性能指标概览 -->
-          <el-card v-if="currentModel.metrics" shadow="never" style="margin-bottom: 20px">
+          <el-card v-if="currentModel.metrics" class="hc-card-elevated" shadow="never" style="margin-bottom: 20px">
             <template #header>
               <span style="font-weight: 600">性能指标概览</span>
             </template>
             <el-row :gutter="20">
               <el-col :span="6">
                 <div class="metric-card">
-                  <div class="metric-label">准确率</div>
+                  <div class="metric-label">准确率（CV 均值）</div>
                   <div class="metric-value">
-                    {{ formatMetric(currentModel.metrics?.final_accuracy || currentModel.metrics?.accuracy?.mean) }}
+                    {{ formatMetric(primaryMetric(currentModel.metrics, 'accuracy', 'final_accuracy')) }}
                   </div>
-                  <div class="metric-cv" v-if="currentModel.metrics?.accuracy">
-                    CV: {{ formatScore(currentModel.metrics.accuracy.mean) }} ± {{ formatScore(currentModel.metrics.accuracy.std) }}
+                  <div class="metric-cv" v-if="currentModel.metrics?.accuracy && currentModel.metrics.accuracy.std != null">
+                    标准差: ± {{ formatScore(currentModel.metrics.accuracy.std) }}
                   </div>
                 </div>
               </el-col>
               <el-col :span="6">
                 <div class="metric-card">
-                  <div class="metric-label">精确率</div>
+                  <div class="metric-label">精确率（CV 均值）</div>
                   <div class="metric-value">
-                    {{ formatMetric(currentModel.metrics?.final_precision || currentModel.metrics?.precision?.mean) }}
+                    {{ formatMetric(primaryMetric(currentModel.metrics, 'precision', 'final_precision')) }}
                   </div>
-                  <div class="metric-cv" v-if="currentModel.metrics?.precision">
-                    CV: {{ formatScore(currentModel.metrics.precision.mean) }} ± {{ formatScore(currentModel.metrics.precision.std) }}
+                  <div class="metric-cv" v-if="currentModel.metrics?.precision && currentModel.metrics.precision.std != null">
+                    标准差: ± {{ formatScore(currentModel.metrics.precision.std) }}
                   </div>
                 </div>
               </el-col>
               <el-col :span="6">
                 <div class="metric-card">
-                  <div class="metric-label">召回率</div>
+                  <div class="metric-label">召回率（CV 均值）</div>
                   <div class="metric-value">
-                    {{ formatMetric(currentModel.metrics?.final_recall || currentModel.metrics?.recall?.mean) }}
+                    {{ formatMetric(primaryMetric(currentModel.metrics, 'recall', 'final_recall')) }}
                   </div>
-                  <div class="metric-cv" v-if="currentModel.metrics?.recall">
-                    CV: {{ formatScore(currentModel.metrics.recall.mean) }} ± {{ formatScore(currentModel.metrics.recall.std) }}
+                  <div class="metric-cv" v-if="currentModel.metrics?.recall && currentModel.metrics.recall.std != null">
+                    标准差: ± {{ formatScore(currentModel.metrics.recall.std) }}
                   </div>
                 </div>
               </el-col>
               <el-col :span="6">
                 <div class="metric-card">
-                  <div class="metric-label">F1（F1分数）</div>
+                  <div class="metric-label">F1（CV 均值）</div>
                   <div class="metric-value">
-                    {{ formatMetric(currentModel.metrics?.final_f1 || currentModel.metrics?.f1?.mean) }}
+                    {{ formatMetric(primaryMetric(currentModel.metrics, 'f1', 'final_f1')) }}
                   </div>
-                  <div class="metric-cv" v-if="currentModel.metrics?.f1">
-                    CV: {{ formatScore(currentModel.metrics.f1.mean) }} ± {{ formatScore(currentModel.metrics.f1.std) }}
+                  <div class="metric-cv" v-if="currentModel.metrics?.f1 && currentModel.metrics.f1.std != null">
+                    标准差: ± {{ formatScore(currentModel.metrics.f1.std) }}
                   </div>
                 </div>
               </el-col>
@@ -413,12 +414,12 @@
             <el-row :gutter="20" style="margin-top: 20px">
               <el-col :span="12">
                 <div class="metric-card">
-                  <div class="metric-label">ROC AUC（受试者工作特征曲线下面积）</div>
+                  <div class="metric-label">ROC AUC（CV 均值）</div>
                   <div class="metric-value">
-                    {{ formatMetric(currentModel.metrics?.final_roc_auc || currentModel.metrics?.roc_auc?.mean) }}
+                    {{ formatMetric(primaryMetric(currentModel.metrics, 'roc_auc', 'final_roc_auc')) }}
                   </div>
-                  <div class="metric-cv" v-if="currentModel.metrics?.roc_auc && currentModel.metrics.roc_auc.mean !== null">
-                    CV: {{ formatScore(currentModel.metrics.roc_auc.mean) }} ± {{ formatScore(currentModel.metrics.roc_auc.std) }}
+                  <div class="metric-cv" v-if="currentModel.metrics?.roc_auc && currentModel.metrics.roc_auc.std != null">
+                    标准差: ± {{ formatScore(currentModel.metrics.roc_auc.std) }}
                   </div>
                 </div>
               </el-col>
@@ -426,7 +427,7 @@
           </el-card>
 
           <!-- 交叉验证分数可视化 -->
-          <el-card v-if="currentModel.metrics && cvScoresData.length > 0" shadow="never" style="margin-bottom: 20px">
+          <el-card v-if="currentModel.metrics && cvScoresData.length > 0" class="hc-card-elevated" shadow="never" style="margin-bottom: 20px">
             <template #header>
               <span style="font-weight: 600">交叉验证分数分布</span>
             </template>
@@ -434,11 +435,11 @@
           </el-card>
 
           <!-- 交叉验证分数详情表格 -->
-          <el-card v-if="cvScoresData.length > 0" shadow="never" style="margin-bottom: 20px">
+          <el-card v-if="cvScoresData.length > 0" class="hc-card-elevated" shadow="never" style="margin-bottom: 20px">
             <template #header>
               <span style="font-weight: 600">交叉验证分数详情</span>
             </template>
-            <el-table :data="cvScoresData" border stripe>
+            <el-table :data="cvScoresData" stripe>
               <el-table-column prop="metric" label="指标" width="120" />
               <el-table-column prop="mean" label="平均值" width="120" align="center" />
               <el-table-column prop="std" label="标准差" width="120" align="center" />
@@ -458,7 +459,7 @@
           </el-card>
 
           <!-- 混淆矩阵 -->
-          <el-card v-if="currentModel.metrics?.confusion_matrix" shadow="never">
+          <el-card v-if="currentModel.metrics?.confusion_matrix" class="hc-card-elevated" shadow="never">
             <template #header>
               <span style="font-weight: 600">混淆矩阵</span>
             </template>
@@ -496,6 +497,7 @@
 
 <script>
 import { ref, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   DataBoard,
@@ -506,6 +508,7 @@ import {
   DataAnalysis
 } from '@element-plus/icons-vue'
 import { apiService } from '../services/api'
+import { primaryMetric } from '../utils/metricsDisplay'
 import * as echarts from 'echarts'
 
 export default {
@@ -519,6 +522,7 @@ export default {
     DataAnalysis
   },
   setup() {
+    const router = useRouter()
     const loading = ref(false)
     const modelList = ref([])
     const detailVisible = ref(false)
@@ -537,7 +541,7 @@ export default {
       const modelsWithMetrics = modelList.value.filter(m => m.metrics)
       if (modelsWithMetrics.length === 0) return '0.00'
       const sum = modelsWithMetrics.reduce((acc, model) => {
-        const accValue = model.metrics?.final_accuracy || model.metrics?.accuracy?.mean || 0
+        const accValue = primaryMetric(model.metrics, 'accuracy', 'final_accuracy') || 0
         return acc + (typeof accValue === 'number' ? accValue : 0)
       }, 0)
       return ((sum / modelsWithMetrics.length) * 100).toFixed(2)
@@ -546,12 +550,12 @@ export default {
     const averageAUC = computed(() => {
       if (modelList.value.length === 0) return '0.0000'
       const validModels = modelList.value.filter(model => {
-        const auc = model.metrics?.final_roc_auc || model.metrics?.roc_auc?.mean
+        const auc = primaryMetric(model.metrics, 'roc_auc', 'final_roc_auc')
         return auc !== null && auc !== undefined && !isNaN(auc)
       })
       if (validModels.length === 0) return 'N/A'
       const sum = validModels.reduce((acc, model) => {
-        const aucValue = model.metrics?.final_roc_auc || model.metrics?.roc_auc?.mean || 0
+        const aucValue = primaryMetric(model.metrics, 'roc_auc', 'final_roc_auc') || 0
         return acc + (typeof aucValue === 'number' ? aucValue : 0)
       }, 0)
       return (sum / validModels.length).toFixed(4)
@@ -561,7 +565,7 @@ export default {
       const modelsWithMetrics = modelList.value.filter(m => m.metrics)
       if (modelsWithMetrics.length === 0) return '0.0000'
       const sum = modelsWithMetrics.reduce((acc, model) => {
-        const f1Value = model.metrics?.final_f1 || model.metrics?.f1?.mean || 0
+        const f1Value = primaryMetric(model.metrics, 'f1', 'final_f1') || 0
         return acc + (typeof f1Value === 'number' ? f1Value : 0)
       }, 0)
       return (sum / modelsWithMetrics.length).toFixed(4)
@@ -716,7 +720,7 @@ export default {
 
       const modelIds = modelsWithMetrics.map(m => m.model_id.substring(0, 15) + '...')
       const accuracies = modelsWithMetrics.map(m => {
-        const acc = m.metrics?.final_accuracy || m.metrics?.accuracy?.mean || 0
+        const acc = primaryMetric(m.metrics, 'accuracy', 'final_accuracy') || 0
         return (typeof acc === 'number' ? acc : parseFloat(acc)) * 100
       })
 
@@ -820,7 +824,7 @@ export default {
 
       // 只显示有AUC数据的模型
       const modelsWithAuc = modelList.value.filter(m => {
-        const auc = m.metrics?.final_roc_auc || m.metrics?.roc_auc?.mean
+        const auc = primaryMetric(m.metrics, 'roc_auc', 'final_roc_auc')
         return auc !== null && auc !== undefined && !isNaN(auc)
       })
 
@@ -837,7 +841,7 @@ export default {
 
       const modelIds = modelsWithAuc.map(m => m.model_id.substring(0, 15) + '...')
       const aucs = modelsWithAuc.map(m => {
-        const auc = m.metrics?.final_roc_auc || m.metrics?.roc_auc?.mean
+        const auc = primaryMetric(m.metrics, 'roc_auc', 'final_roc_auc')
         return parseFloat(auc)
       })
 
@@ -983,11 +987,11 @@ export default {
         const metrics = model.metrics || {}
         return {
           value: [
-            metrics.final_accuracy || metrics.accuracy?.mean || 0,
-            metrics.final_precision || metrics.precision?.mean || 0,
-            metrics.final_recall || metrics.recall?.mean || 0,
-            metrics.final_f1 || metrics.f1?.mean || 0,
-            metrics.final_roc_auc || metrics.roc_auc?.mean || 0
+            primaryMetric(metrics, 'accuracy', 'final_accuracy') || 0,
+            primaryMetric(metrics, 'precision', 'final_precision') || 0,
+            primaryMetric(metrics, 'recall', 'final_recall') || 0,
+            primaryMetric(metrics, 'f1', 'final_f1') || 0,
+            primaryMetric(metrics, 'roc_auc', 'final_roc_auc') || 0
           ],
           name: model.model_id.substring(0, 15) + '...'
         }
@@ -1194,12 +1198,8 @@ export default {
     }
 
     const viewModelDetail = (model) => {
-      currentModel.value = model
-      detailVisible.value = true
-      // 等待DOM更新后初始化图表
-      nextTick(() => {
-        initDetailCvChart()
-      })
+      // Navigate to the dedicated model detail page
+      router.push(`/models/${model.model_id}`)
     }
 
     const handleDetailClose = () => {
@@ -1211,7 +1211,7 @@ export default {
       }
     }
 
-    const initDetailCvChart = () => {
+    const _initDetailCvChart = () => {
       if (!detailCvChartRef.value || !currentModel.value || !currentModel.value.metrics) return
 
       if (detailCvChart) {
@@ -1476,6 +1476,7 @@ export default {
       formatMetric,
       formatScore,
       formatDate,
+      primaryMetric,
       loadModelList,
       viewModelDetail,
       handleDeleteModel,
@@ -1488,10 +1489,8 @@ export default {
 </script>
 
 <style scoped>
-.dashboard {
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 20px;
+.dashboard.hc-page-shell {
+  padding-top: 4px;
 }
 
 .card-header {
@@ -1521,6 +1520,16 @@ export default {
 
 :deep(.el-card:hover) {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+:deep(.dashboard-model-table .el-table__inner-wrapper::before) {
+  display: none;
+}
+
+:deep(.dashboard-model-table th.el-table__cell) {
+  background: #f5f7fa !important;
+  font-weight: 600;
+  font-size: 13px;
 }
 
 .stat-card {
@@ -1703,6 +1712,13 @@ export default {
 
 .expand-metric-card:hover {
   transform: translateY(-3px);
+}
+
+.expand-metric-hint {
+  font-size: 12px;
+  color: #909399;
+  margin: -8px 0 14px 0;
+  line-height: 1.5;
 }
 
 .expand-metric-label {

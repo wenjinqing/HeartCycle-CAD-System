@@ -1,12 +1,22 @@
 <template>
-  <div class="monitor">
-    <el-card>
+  <div class="monitor hc-page-shell">
+    <el-card class="hc-card-elevated monitor-hero-card" shadow="never">
       <template #header>
         <div class="card-header">
           <el-icon><MonitorIcon /></el-icon>
           <span>冠心病监测与预警分析</span>
         </div>
       </template>
+
+      <el-alert
+        v-if="recordPatientId"
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 16px"
+        title="关联患者预测记录"
+        :description="`已尝试从患者档案填入体征、实验室与危险因素（若有）；分析结果将在已登录前提下写入该患者预测记录。`"
+      />
 
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <!-- 体征信息输入 -->
@@ -81,6 +91,128 @@
               >
                 <template #append>自动计算</template>
               </el-input>
+            </el-form-item>
+
+            <el-divider>血压、心率与腰围</el-divider>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="收缩压 (mmHg)" prop="blood_pressure_systolic">
+                  <el-input-number
+                    v-model="formData.blood_pressure_systolic"
+                    :min="0"
+                    :max="300"
+                    placeholder="选填"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="舒张压 (mmHg)" prop="blood_pressure_diastolic">
+                  <el-input-number
+                    v-model="formData.blood_pressure_diastolic"
+                    :min="0"
+                    :max="200"
+                    placeholder="选填"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="静息心率 (次/分)" prop="resting_heart_rate">
+                  <el-input-number
+                    v-model="formData.resting_heart_rate"
+                    :min="0"
+                    :max="220"
+                    placeholder="选填"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="腰围 (cm)" prop="waist_cm">
+                  <el-input-number
+                    v-model="formData.waist_cm"
+                    :min="0"
+                    :max="200"
+                    :precision="1"
+                    placeholder="选填"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-divider>血脂与血糖（选填，单位 mmol/L；HbA1c 为 %）</el-divider>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="总胆固醇" prop="total_cholesterol">
+                  <el-input-number v-model="formData.total_cholesterol" :min="0" :precision="2" style="width: 100%" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="LDL-C" prop="ldl_cholesterol">
+                  <el-input-number v-model="formData.ldl_cholesterol" :min="0" :precision="2" style="width: 100%" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="HDL-C" prop="hdl_cholesterol">
+                  <el-input-number v-model="formData.hdl_cholesterol" :min="0" :precision="2" style="width: 100%" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="甘油三酯" prop="triglyceride">
+                  <el-input-number v-model="formData.triglyceride" :min="0" :precision="2" style="width: 100%" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="空腹血糖" prop="fasting_glucose">
+                  <el-input-number v-model="formData.fasting_glucose" :min="0" :precision="2" style="width: 100%" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="糖化血红蛋白 HbA1c" prop="hba1c">
+                  <el-input-number v-model="formData.hba1c" :min="0" :max="20" :precision="2" style="width: 100%" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+
+            <el-divider>生活方式与危险因素（选填）</el-divider>
+            <el-row :gutter="20">
+              <el-col :span="12">
+                <el-form-item label="吸烟" prop="smoke_status">
+                  <el-select v-model="formData.smoke_status" placeholder="请选择" style="width: 100%">
+                    <el-option label="从不吸烟" value="never" />
+                    <el-option label="已戒烟" value="former" />
+                    <el-option label="目前吸烟" value="current" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="体力活动" prop="physical_activity">
+                  <el-select v-model="formData.physical_activity" placeholder="请选择" style="width: 100%">
+                    <el-option label="不详" value="unknown" />
+                    <el-option label="久坐少动" value="sedentary" />
+                    <el-option label="轻度活动" value="light" />
+                    <el-option label="中度活动" value="moderate" />
+                    <el-option label="重度活动/体力劳动者" value="heavy" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-form-item label="合并症与症状">
+              <div class="risk-switch-row">
+                <el-switch v-model="formData.diabetes" :active-value="1" :inactive-value="0" active-text="糖尿病" />
+                <el-switch v-model="formData.hypertension_dx" :active-value="1" :inactive-value="0" active-text="高血压（诊断）" />
+                <el-switch v-model="formData.dyslipidemia" :active-value="1" :inactive-value="0" active-text="血脂异常" />
+                <el-switch v-model="formData.family_history_cad" :active-value="1" :inactive-value="0" active-text="早发冠心病家族史" />
+                <el-switch v-model="formData.chest_pain_symptom" :active-value="1" :inactive-value="0" active-text="胸痛/心绞痛症状" />
+              </div>
             </el-form-item>
 
             <el-divider>模型选择</el-divider>
@@ -654,6 +786,41 @@
               />
             </div>
 
+            <!-- H5 心电信号可视化 -->
+            <div v-if="h5Signals" style="margin-top: 20px">
+              <el-divider>原始心电信号</el-divider>
+
+              <!-- ECG -->
+              <el-card v-if="h5Signals.ecg" style="margin-bottom: 16px">
+                <template #header>
+                  <span>ECG 心电图</span>
+                  <el-tag size="small" style="margin-left: 8px">单位: mV</el-tag>
+                </template>
+                <div ref="monitorEcgRef" style="height: 220px"></div>
+              </el-card>
+
+              <!-- ICG -->
+              <el-card v-if="h5Signals.icg" style="margin-bottom: 16px">
+                <template #header>
+                  <span>ICG 阻抗心动图</span>
+                  <el-tag size="small" style="margin-left: 8px">单位: Ω</el-tag>
+                </template>
+                <div ref="monitorIcgRef" style="height: 220px"></div>
+              </el-card>
+
+              <!-- dZ/dt -->
+              <el-card v-if="h5Signals.icg" style="margin-bottom: 16px">
+                <template #header><span>dZ/dt 信号</span></template>
+                <div ref="monitorDzRef" style="height: 220px"></div>
+              </el-card>
+
+              <!-- ECHO -->
+              <el-card v-if="h5Signals.echo" style="margin-bottom: 16px">
+                <template #header><span>超声心动图 (ECHO)</span></template>
+                <canvas ref="monitorEchoRef" style="width:100%;height:260px;display:block"></canvas>
+              </el-card>
+            </div>
+
             <!-- 调试信息 -->
             <div v-if="analysisResult && !shapInstanceData && !shapGlobalData" style="margin-top: 20px">
               <el-alert
@@ -682,7 +849,8 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Monitor as MonitorIcon, Search, Warning, Upload, Document, Loading, Refresh, RefreshLeft, Check, CircleCheck, InfoFilled, SuccessFilled, Printer } from '@element-plus/icons-vue'
 import { apiService } from '../services/api'
@@ -690,6 +858,7 @@ import { storage } from '../utils/storage'
 import { exportPDFReport as generatePDF } from '../utils/pdfReport'
 import ShapExplanation from '../components/ShapExplanation.vue'
 import { formatLabelWithAbbr, getAbbreviationTooltip } from '../utils/abbreviations'
+import { appendExtendedClinicalFeaturesFromForm } from '../utils/clinicalFeatureVector'
 
 export default {
   name: 'Monitor',
@@ -710,6 +879,9 @@ export default {
     ShapExplanation
   },
   setup() {
+    const route = useRoute()
+    const recordPatientId = ref(null)
+
     const formRef = ref(null)
     const uploadRef = ref(null)
     const activeTab = ref('info')
@@ -722,6 +894,14 @@ export default {
     const extracting = ref(false)
     const extractedFeatures = ref(null)
     const uploadedFilePath = ref(null)
+
+    // H5信号可视化
+    const h5Signals = ref(null)
+    const monitorEcgRef = ref(null)
+    const monitorIcgRef = ref(null)
+    const monitorDzRef = ref(null)
+    const monitorEchoRef = ref(null)
+    let signalCharts = []
     const selectedModel = ref('')
     const selectedModels = ref([])
     const modelList = ref([])
@@ -729,17 +909,69 @@ export default {
     const predictionMode = ref('single') // 'single' 或 'ensemble'
     const ensembleMethod = ref('voting') // 'voting' 或 'weighted'
 
-    const formData = ref({
+    const defaultMonitorForm = () => ({
       age: null,
       gender: 'M',
       height: null,
       weight: null,
+      blood_pressure_systolic: null,
+      blood_pressure_diastolic: null,
+      resting_heart_rate: null,
+      waist_cm: null,
+      total_cholesterol: null,
+      ldl_cholesterol: null,
+      hdl_cholesterol: null,
+      triglyceride: null,
+      fasting_glucose: null,
+      hba1c: null,
+      smoke_status: 'never',
+      physical_activity: 'unknown',
+      diabetes: 0,
+      hypertension_dx: 0,
+      dyslipidemia: 0,
+      family_history_cad: 0,
+      chest_pain_symptom: 0,
       mean_rr: null,
       sdnn: null,
       rmssd: null,
       pnn50: null,
       lf_hf_ratio: null
     })
+
+    const formData = ref(defaultMonitorForm())
+
+    const applyPatientProfileToForm = (p) => {
+      if (!p) return
+      const fd = formData.value
+      if (p.age != null && p.age !== '') fd.age = p.age
+      const g = (p.gender != null ? String(p.gender) : '').toLowerCase()
+      if (g === 'female' || g === 'f' || g === '女' || g === '2') fd.gender = 'F'
+      else if (g === 'male' || g === 'm' || g === '男' || g === '1') fd.gender = 'M'
+      if (p.height_cm != null) fd.height = p.height_cm
+      if (p.weight_kg != null) fd.weight = p.weight_kg
+      if (p.blood_pressure_systolic != null) fd.blood_pressure_systolic = p.blood_pressure_systolic
+      if (p.blood_pressure_diastolic != null) fd.blood_pressure_diastolic = p.blood_pressure_diastolic
+      if (p.resting_heart_rate != null) fd.resting_heart_rate = p.resting_heart_rate
+      if (p.waist_cm != null) fd.waist_cm = p.waist_cm
+      if (p.total_cholesterol != null) fd.total_cholesterol = p.total_cholesterol
+      if (p.ldl_cholesterol != null) fd.ldl_cholesterol = p.ldl_cholesterol
+      if (p.hdl_cholesterol != null) fd.hdl_cholesterol = p.hdl_cholesterol
+      if (p.triglyceride != null) fd.triglyceride = p.triglyceride
+      if (p.fasting_glucose != null) fd.fasting_glucose = p.fasting_glucose
+      if (p.hba1c != null) fd.hba1c = p.hba1c
+      if (p.smoke_status) fd.smoke_status = p.smoke_status
+      if (p.physical_activity) fd.physical_activity = p.physical_activity
+      if (p.diabetes === 0 || p.diabetes === 1) fd.diabetes = p.diabetes
+      if (p.hypertension_dx === 0 || p.hypertension_dx === 1) fd.hypertension_dx = p.hypertension_dx
+      if (p.dyslipidemia === 0 || p.dyslipidemia === 1) fd.dyslipidemia = p.dyslipidemia
+      if (p.family_history_cad === 0 || p.family_history_cad === 1) fd.family_history_cad = p.family_history_cad
+      if (p.chest_pain_symptom === 0 || p.chest_pain_symptom === 1) fd.chest_pain_symptom = p.chest_pain_symptom
+      if (p.hrv_mean_rr != null) fd.mean_rr = p.hrv_mean_rr
+      if (p.hrv_sdnn != null) fd.sdnn = p.hrv_sdnn
+      if (p.hrv_rmssd != null) fd.rmssd = p.hrv_rmssd
+      if (p.hrv_pnn50 != null) fd.pnn50 = p.hrv_pnn50
+      if (p.hrv_lf_hf_ratio != null) fd.lf_hf_ratio = p.hrv_lf_hf_ratio
+    }
 
     const rules = {
       age: [
@@ -833,6 +1065,9 @@ export default {
       selectedFile.value = null
       extractedFeatures.value = null
       uploadedFilePath.value = null
+      h5Signals.value = null
+      signalCharts.forEach(c => c.dispose())
+      signalCharts = []
     }
 
     const formatFileSize = (bytes) => {
@@ -862,6 +1097,27 @@ export default {
         ElMessage.success('文件上传成功，开始提取特征...')
         uploading.value = false
         extracting.value = true
+
+        // 同步解析H5信号用于可视化（后台静默进行，不阻塞特征提取）
+        try {
+          const vizFormData = new FormData()
+          vizFormData.append('file', selectedFile.value)
+          const token = localStorage.getItem('access_token')
+          const baseUrl = uploadResponse.config?.baseURL || apiService.getBaseUrl?.() || 'http://localhost:8009/api/v1'
+          const vizRes = await fetch(`${baseUrl}/h5/visualize`, {
+            method: 'POST',
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            body: vizFormData
+          })
+          if (vizRes.ok) {
+            const vizData = await vizRes.json()
+            h5Signals.value = vizData.signals
+            // 等待DOM更新后渲染图表
+            setTimeout(renderSignalCharts, 300)
+          }
+        } catch (_e) {
+          // 信号解析失败不影响主流程
+        }
 
         // 2. 提取特征
         const extractResponse = await apiService.extractFeatures({
@@ -1018,7 +1274,8 @@ export default {
     }
 
     const resetForm = () => {
-      formRef.value?.resetFields()
+      formData.value = defaultMonitorForm()
+      formRef.value?.clearValidate?.()
       analysisResult.value = null
       shapInstanceData.value = null
       shapGlobalData.value = null
@@ -1128,7 +1385,52 @@ export default {
       return tags[type] || 'info'
     }
 
-    // 组件挂载时加载模型列表
+    const lastRoutePatientId = ref(null)
+
+    const patientIdFromRouteQuery = () => {
+      const raw = route.query.patient_id
+      const q = Array.isArray(raw) ? raw[0] : raw
+      if (q === undefined || q === null || String(q).trim() === '') return null
+      const n = parseInt(String(q), 10)
+      if (Number.isNaN(n) || n <= 0) return null
+      return n
+    }
+
+    const hydratePatientFromRoute = async () => {
+      const n = patientIdFromRouteQuery()
+      if (!n) {
+        recordPatientId.value = null
+        lastRoutePatientId.value = null
+        return
+      }
+      const switchedPatient = lastRoutePatientId.value !== n
+      lastRoutePatientId.value = n
+      recordPatientId.value = n
+      if (switchedPatient) {
+        formData.value = defaultMonitorForm()
+      }
+      try {
+        const res = await apiService.getPatient(n)
+        if (res?.success && res.data) {
+          applyPatientProfileToForm(res.data)
+          if (switchedPatient) {
+            ElMessage.success('已从患者档案填入体征、实验室与危险因素，可继续修改后再分析')
+          }
+        }
+      } catch {
+        ElMessage.warning('加载患者档案失败，请手动填写体征信息')
+      }
+    }
+
+    // 路由仅 query 变化时组件会复用，onMounted 不会再次执行，必须 watch patient_id
+    watch(
+      () => route.query.patient_id,
+      () => {
+        hydratePatientFromRoute()
+      },
+      { immediate: true }
+    )
+
     onMounted(() => {
       loadModelList()
     })
@@ -1146,7 +1448,7 @@ export default {
         return buildFeatureVectorFromExtracted(extractedFeatures.value)
       }
       
-      // 否则使用表单数据构建基础特征向量（10个特征）
+      // 否则使用表单数据构建基础特征向量（10 个核心 + 末尾扩展临床维，与 clinicalFeatureVector.js 一致）
       const features = []
       
       // 临床特征（5个）
@@ -1162,7 +1464,9 @@ export default {
       features.push(formData.value.rmssd || 0)
       features.push(formData.value.pnn50 || 0)
       features.push(formData.value.lf_hf_ratio || 0)
-      
+
+      appendExtendedClinicalFeaturesFromForm(features, formData.value)
+
       return features
     }
 
@@ -1207,7 +1511,9 @@ export default {
       if (extracted.sd1_sd2_ratio !== undefined) features.push(extracted.sd1_sd2_ratio)
       if (extracted.sample_entropy !== undefined) features.push(extracted.sample_entropy)
       if (extracted.approximate_entropy !== undefined) features.push(extracted.approximate_entropy)
-      
+
+      appendExtendedClinicalFeaturesFromForm(features, formData.value)
+
       return features
     }
 
@@ -1219,6 +1525,8 @@ export default {
         
         analyzing.value = true
         activeTab.value = 'result'
+        // 如果已有信号数据，延时渲染图表（等待tab切换完成）
+        if (h5Signals.value) setTimeout(renderSignalCharts, 400)
         
         // 如果上传了文件但还没有提取特征，先提取
         if (selectedFile.value && !extractedFeatures.value) {
@@ -1245,7 +1553,8 @@ export default {
           predictionResponse = await apiService.predictEnsemble({
             model_ids: selectedModels.value,
             features: features,
-            method: ensembleMethod.value
+            method: ensembleMethod.value,
+            ...(recordPatientId.value ? { patient_id: recordPatientId.value } : {})
           })
         } else {
           // 单个模型预测
@@ -1277,7 +1586,8 @@ export default {
           // 进行预测
           predictionResponse = await apiService.predict({
             model_id: modelId,
-            features: features
+            features: features,
+            ...(recordPatientId.value ? { patient_id: recordPatientId.value } : {})
           })
         }
         
@@ -1315,11 +1625,11 @@ export default {
 
               if (instanceShapResponse.data) {
                 shapInstanceData.value = instanceShapResponse.data
-                console.log('✅ SHAP单样本数据已设置:', shapInstanceData.value)
+                console.log('SHAP单样本数据已设置:', shapInstanceData.value)
                 ElMessage.success('SHAP解释分析完成')
               } else if (instanceShapResponse) {
                 shapInstanceData.value = instanceShapResponse
-                console.log('✅ SHAP单样本数据已设置（直接响应）:', shapInstanceData.value)
+                console.log('SHAP单样本数据已设置（直接响应）:', shapInstanceData.value)
                 ElMessage.success('SHAP解释分析完成')
               }
               
@@ -1327,34 +1637,40 @@ export default {
               // 先获取模型信息，看看是否有训练数据文件路径
               apiService.getModelInfo(modelId).then(modelInfo => {
                 const modelData = modelInfo.data || modelInfo
-                const trainingDataFile = modelData.feature_file || modelData.metadata?.feature_file
+                const trainingDataFile =
+                  modelData.feature_file ||
+                  modelData.metadata?.feature_file ||
+                  modelData.training_data_file
 
                 console.log('模型信息:', modelData)
                 console.log('训练数据文件路径:', trainingDataFile)
 
-                // 调用全局特征重要性API
-                const shapRequest = {
-                  model_id: modelId,
-                  n_samples: 50 // 使用较少的样本以加快速度
+                if (!trainingDataFile) {
+                  console.info(
+                    '跳过全局 SHAP：模型元数据无训练特征 CSV（常见于从 H5 训练的模型）。单样本 SHAP 仍可用。'
+                  )
+                  return Promise.resolve(null)
                 }
 
-                // 只有在有训练数据文件路径时才传递
-                if (trainingDataFile) {
-                  shapRequest.training_data_file = trainingDataFile
+                const shapRequest = {
+                  model_id: modelId,
+                  n_samples: 50,
+                  training_data_file: trainingDataFile
                 }
 
                 return apiService.explainGlobal(shapRequest)
               }).then(response => {
+                if (!response) return
                 console.log('SHAP全局解释响应:', response)
                 if (response.data) {
                   shapGlobalData.value = response.data
-                  console.log('✅ SHAP全局数据已设置:', shapGlobalData.value)
+                  console.log('SHAP全局数据已设置:', shapGlobalData.value)
                 } else if (response) {
                   shapGlobalData.value = response
-                  console.log('✅ SHAP全局数据已设置（直接响应）:', shapGlobalData.value)
+                  console.log('SHAP全局数据已设置（直接响应）:', shapGlobalData.value)
                 }
               }).catch(error => {
-                console.error('❌ 全局SHAP解释失败:', error)
+                console.error('全局SHAP解释失败:', error)
               })
             } catch (error) {
               console.warn('SHAP解释不可用:', error)
@@ -1369,21 +1685,30 @@ export default {
         
         ElMessage.success('分析完成')
         
-        // 保存到历史记录
+        // 本地历史：医护/科研等多账号场景按用户隔离；患者账号仅以服务端预测记录为准（与本人 user_id 绑定）
         try {
-          storage.saveHistory({
-            ...formData.value,
-            bmi: parseFloat(calculatedBMI.value) || 0,
-            riskScore: parseFloat(riskScore.value),
-            prediction: analysisResult.value.prediction,
-            probability: analysisResult.value.probability,
-            confidence: analysisResult.value.confidence,
-            method: analysisResult.value.method || 'single',
-            modelId: predictionMode.value === 'single' ? selectedModel.value : null,
-            modelIds: predictionMode.value === 'ensemble' ? selectedModels.value : null,
-            modelCount: analysisResult.value.modelCount || 1,
-            features: features // 保存使用的特征向量
-          })
+          let skipLocalHistory = false
+          try {
+            const u = JSON.parse(localStorage.getItem('user') || 'null')
+            if (u && u.role === 'patient') skipLocalHistory = true
+          } catch {
+            skipLocalHistory = false
+          }
+          if (!skipLocalHistory) {
+            storage.saveHistory({
+              ...formData.value,
+              bmi: parseFloat(calculatedBMI.value) || 0,
+              riskScore: parseFloat(riskScore.value),
+              prediction: analysisResult.value.prediction,
+              probability: analysisResult.value.probability,
+              confidence: analysisResult.value.confidence,
+              method: analysisResult.value.method || 'single',
+              modelId: predictionMode.value === 'single' ? selectedModel.value : null,
+              modelIds: predictionMode.value === 'ensemble' ? selectedModels.value : null,
+              modelCount: analysisResult.value.modelCount || 1,
+              features: features // 保存使用的特征向量
+            })
+          }
         } catch (error) {
           console.warn('保存历史记录失败:', error)
         }
@@ -1396,8 +1721,66 @@ export default {
     }
 
 
+    // H5信号图表渲染
+    const renderSignalCharts = async () => {
+      const { nextTick } = await import('vue')
+      const echarts = await import('echarts')
+      await nextTick()
+      signalCharts.forEach(c => c.dispose())
+      signalCharts = []
+      const s = h5Signals.value
+      if (!s) return
+
+      const lineOpt = (timeArr, dataArr, color, yUnit) => ({
+        tooltip: { trigger: 'axis', formatter: (p) => `${(+p[0].value[0]).toFixed(1)} ms<br/>${p[0].marker}${(+p[0].value[1]).toFixed(4)} ${yUnit}` },
+        grid: { left: 60, right: 20, top: 10, bottom: 40 },
+        xAxis: { type: 'value', name: 'ms', nameLocation: 'end', min: timeArr[0], max: timeArr[timeArr.length - 1] },
+        yAxis: { type: 'value', name: yUnit },
+        series: [{ type: 'line', data: timeArr.map((t, i) => [t, dataArr[i]]), symbol: 'none', lineStyle: { color, width: 1 }, areaStyle: { color: color + '22' } }],
+        dataZoom: [{ type: 'inside' }, { type: 'slider', height: 20, bottom: 5 }]
+      })
+
+      if (s.ecg && monitorEcgRef.value) {
+        const c = echarts.init(monitorEcgRef.value)
+        c.setOption(lineOpt(s.ecg.time, s.ecg.data, '#409EFF', 'mV'))
+        signalCharts.push(c)
+      }
+      if (s.icg && monitorIcgRef.value) {
+        const c = echarts.init(monitorIcgRef.value)
+        c.setOption(lineOpt(s.icg.time, s.icg.data, '#67C23A', 'Ω'))
+        signalCharts.push(c)
+      }
+      if (s.icg && monitorDzRef.value) {
+        const c = echarts.init(monitorDzRef.value)
+        c.setOption(lineOpt(s.icg.time, s.icg.dz, '#E6A23C', ''))
+        signalCharts.push(c)
+      }
+      if (s.echo && monitorEchoRef.value) {
+        const echo = s.echo
+        const canvas = monitorEchoRef.value
+        canvas.width = echo.width
+        canvas.height = echo.height
+        const ctx = canvas.getContext('2d')
+        const imgData = ctx.createImageData(echo.width, echo.height)
+        for (let row = 0; row < echo.height; row++) {
+          for (let col = 0; col < echo.width; col++) {
+            const v = echo.data[row][col]
+            const idx = (row * echo.width + col) * 4
+            imgData.data[idx]     = Math.min(255, v < 128 ? 0 : (v - 128) * 2)
+            imgData.data[idx + 1] = Math.min(255, v < 128 ? v * 2 : 255)
+            imgData.data[idx + 2] = Math.min(255, v < 64 ? v * 4 : Math.max(0, 255 - (v - 64) * 3))
+            imgData.data[idx + 3] = 255
+          }
+        }
+        ctx.putImageData(imgData, 0, 0)
+      }
+    }
+
+    // 监听h5Signals变化，自动渲染图表
+
     return {
       formRef,
+      recordPatientId,
       selectedModel,
       selectedModels,
       modelList,
@@ -1427,6 +1810,12 @@ export default {
       riskProgressColor,
       handleFileChange,
       handleFileRemove,
+      h5Signals,
+      monitorEcgRef,
+      monitorIcgRef,
+      monitorDzRef,
+      monitorEchoRef,
+      renderSignalCharts,
       handleUploadAndExtract,
       applyExtractedFeatures,
       formatFileSize,
@@ -1444,17 +1833,25 @@ export default {
       selectedFile,
       Refresh,
       RefreshLeft,
-      Check
+      Check,
+      Document,
+      Printer
     }
   }
 }
 </script>
 
 <style scoped>
-.monitor {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 20px;
+.risk-switch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+}
+
+.monitor-hero-card :deep(.el-card__header) {
+  background: var(--hc-fill-elevated, linear-gradient(180deg, #fafbfc 0%, #fff 100%));
+  border-bottom: 1px solid #f0f2f5;
 }
 
 .card-header {
