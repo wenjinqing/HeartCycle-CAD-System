@@ -40,8 +40,8 @@ class ECGProcessor:
         """
         加载HDF5文件中的ECG信号
         支持两种格式：
-        1. HeartCycle标准格式（嵌套结构）
-        2. 简单格式（直接存储ecg和sampling_rate）
+        1. 简单格式（直接存储ecg和sampling_rate）
+        2. HeartCycle标准格式（嵌套结构）
 
         Parameters:
         -----------

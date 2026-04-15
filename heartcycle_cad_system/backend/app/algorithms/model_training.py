@@ -639,8 +639,7 @@ class ModelTrainer:
         cm = confusion_matrix(y_resampled, y_pred)
         metrics['confusion_matrix'] = cm.tolist()
 
-        # 以下为「全量重采样训练集」上的样本内指标：模型在同一份数据上训练后再预测，易过拟合，
-        # 数值常明显高于 K 折 CV 均值；展示与模型选型应以 accuracy/precision/... 的 mean（CV）为准。
+        # 以下为「全量重采样训练集」上的样本内指标：易过拟合、常高于 K 折 CV 均值；请以各指标的 CV mean 为准。
         metrics['final_accuracy'] = float(accuracy_score(y_resampled, y_pred))
         metrics['final_precision'] = float(precision_score(y_resampled, y_pred, zero_division=0))
         metrics['final_recall'] = float(recall_score(y_resampled, y_pred, zero_division=0))
