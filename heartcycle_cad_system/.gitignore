@@ -75,4 +75,21 @@ Thumbs.db
 htmlcov/
 .pytest_cache/
 
+# 本地注册/测试凭据（切勿提交）
+temp_register.json
+
+# 运行时与本地数据目录（仅忽略项目根下产物目录，勿用 models/ 以免匹配 app/models）
+backend/data/
+data/realdata/
+/models/
+/reports/
+
+# 大体积或可能含真实信息的导出
+scripts/*.h5
+scripts/experiment_report_*.txt
+data/cad_dataset_*.csv
+
+# Node
+node_modules/
+
 
