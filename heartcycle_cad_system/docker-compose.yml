@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # 后端服务
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: heartcycle-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - DATABASE_URL=sqlite:///./data/heartcycle.db
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - heartcycle-network
+
+  # 前端服务
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: heartcycle-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - heartcycle-network
+
+  # Redis 缓存 (可选)
+  redis:
+    image: redis:7-alpine
+    container_name: heartcycle-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - heartcycle-network
+    profiles:
+      - with-redis
+
+  # MySQL 数据库 (可选)
+  mysql:
+    image: mysql:8.0
+    container_name: heartcycle-mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-heartcycle123}
+      - MYSQL_DATABASE=heartcycle_cad
+      - MYSQL_USER=heartcycle
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-heartcycle123}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./backend/scripts/create_tables.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - heartcycle-network
+    profiles:
+      - with-mysql
+
+networks:
+  heartcycle-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  mysql-data:
