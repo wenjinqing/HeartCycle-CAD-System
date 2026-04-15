@@ -91,6 +91,15 @@ npm run serve
 
 ---
 
+## 文档
+
+使用说明、API、部署、论文实验与历史总结等已整理到 **`docs/`**：
+
+- **索引**：[docs/README.md](./docs/README.md)
+- **快捷入口**：[文档导航.md](./文档导航.md)
+
+---
+
 ## 项目结构
 
 ```
@@ -113,8 +122,9 @@ heartcycle_cad_system/
 │   │   ├── services/           # API 服务
 │   │   └── utils/              # 工具函数
 │   └── public/                 # 静态资源
+├── docs/                       # 说明文档（guides / thesis / history / notes）
 ├── scripts/                    # 工具脚本
-├── docs/                       # 文档
+├── 测试数据/                   # 样例与测试数据说明
 └── requirements.txt            # Python 依赖
 ```
 

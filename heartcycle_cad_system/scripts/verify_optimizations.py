@@ -88,12 +88,12 @@ def test_class_weight_optimization():
 
             # 验证模型不是只预测一个类
             if pred_1 == 0:
-                print(f"  ❌ 警告: 模型仍然只预测负类！")
+                print(f"  [警告] 模型仍然只预测负类！")
             else:
-                print(f"  ✅ 成功: 模型能够预测两个类别")
+                print(f"  [成功] 模型能够预测两个类别")
 
         except Exception as e:
-            print(f"  ❌ 错误: {str(e)}")
+            print(f"  [错误] {str(e)}")
 
     print(f"\n{'='*60}")
     print("验证完成！")
@@ -128,10 +128,10 @@ def test_warning_suppression():
         stderr_output = sys.stderr.getvalue()
 
         if 'WARNING' in stderr_output or 'UserWarning' in stderr_output:
-            print("  ❌ 警告未完全抑制")
+            print("  [失败] 警告未完全抑制")
             print(f"  输出: {stderr_output[:200]}...")
         else:
-            print("  ✅ 警告已成功抑制")
+            print("  [成功] 警告已成功抑制")
 
     finally:
         sys.stderr = old_stderr
@@ -146,7 +146,7 @@ if __name__ == "__main__":
         test_warning_suppression()
 
         print("\n" + "=" * 60)
-        print("✅ 所有优化验证完成！")
+        print("所有优化验证完成。")
         print("=" * 60)
         print("\n建议:")
         print("1. 使用随机森林(RF)模型进行训练")
@@ -156,6 +156,6 @@ if __name__ == "__main__":
         print("=" * 60)
 
     except Exception as e:
-        print(f"\n❌ 验证失败: {e}")
+        print(f"\n验证失败: {e}")
         import traceback
         traceback.print_exc()

@@ -160,7 +160,7 @@ def analyze_directory(dir_path):
         print("→ 这些文件可能导致训练失败")
         print("→ 建议修复或删除这些文件")
     else:
-        print(f"⚠ 发现 {warning_count} 个警告文件")
+        print(f"[提示] 发现 {warning_count} 个警告文件")
         print("→ 这些文件的数据质量有待改善，但应该不影响训练")
         print("→ 如果训练仍然失败，问题可能在特征提取或模型训练阶段")
 

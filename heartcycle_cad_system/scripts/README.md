@@ -223,9 +223,9 @@ WantedBy=multi-user.target
 
 ## 📚 相关文档
 
-- **部署指南**: [docs/DEPLOYMENT_GUIDE.md](../docs/DEPLOYMENT_GUIDE.md)
-- **API文档**: [docs/API_DOCUMENTATION.md](../docs/API_DOCUMENTATION.md)
-- **端口冲突解决**: [docs/PORT_CONFLICT_SOLUTION.md](../docs/PORT_CONFLICT_SOLUTION.md)
+- **文档索引**: [docs/README.md](../docs/README.md)
+- **部署指南**: [docs/guides/DEPLOYMENT.md](../docs/guides/DEPLOYMENT.md)
+- **API 说明**: [docs/guides/API.md](../docs/guides/API.md)
 
 ---
 
