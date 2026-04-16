@@ -90,8 +90,8 @@ nul
 test_results/
 feature_analysis/
 
-# 临时图片
-heartcycle/picture/
+# 原始测量数据与数据集目录（仅本地使用，不入库）
+heartcycle/
 
 # 运行时生成的文件
 run_tests.py
@@ -108,10 +108,6 @@ data/raw/
 data/processed/
 data/features/
 data/models/
-
-# 仓库根目录下可能含敏感或大体量表格
-heartcycle/*.xlsx
-heartcycle/**/*.xlsx
 
 # 毕业论文工作区（含 Word、图表与示例表，默认不入库；需要时用 git add -f 挑选）
 论文/
