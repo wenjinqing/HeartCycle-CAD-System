@@ -21,12 +21,27 @@ Authorization: Bearer <your_token_here>
 
 ## API端点总览
 
-### 认证相关 (5个接口)
+### 认证与用户（基础 + 扩展）
+
+**基础（登录态前/后）：**
 - `POST /auth/register` - 用户注册
 - `POST /auth/login` - 用户登录
 - `POST /auth/logout` - 用户登出
-- `POST /auth/refresh` - 刷新Token
+- `POST /auth/refresh` - 刷新 Token
 - `GET /auth/me` - 获取当前用户信息
+
+**当前用户资料与密码：**
+- `PUT /auth/me` - 更新当前用户资料
+- `POST /auth/change-password` - 修改密码
+
+**管理员（需 admin）：**
+- `GET /auth/users` - 用户列表
+- `PUT /auth/users/{user_id}/deactivate` - 禁用用户
+- `PUT /auth/users/{user_id}/activate` - 启用用户
+- `POST /auth/users/{user_id}/reset-password` - 重置用户密码
+- `GET /auth/audit-logs` - 审计日志
+
+> 与前端 **个人中心 `/profile`**、**用户管理 `/admin/users`**、**审计 `/admin/audit-logs`** 对应；完整请求体见 Swagger `/docs`。
 
 ### 患者管理 (9个接口)
 - `POST /patients` - 创建患者
@@ -89,6 +104,14 @@ Authorization: Bearer <your_token_here>
 - `GET /tasks/{task_id}` - 获取任务状态
 - `POST /tasks/{task_id}/cancel` - 取消任务
 - `POST /tasks/cleanup` - 清理已完成任务
+
+### 特征 / 特征选择 / 数据分析（概要）
+
+后端在 `/api/v1` 下还注册有 **`features`**、**`selection`**、**`analysis`** 等路由（用于特征提取、筛选与统计分析）。路径与字段以 **Swagger `/docs`** 为准；本文档未逐条展开时可从 OpenAPI 导出或在线调试。
+
+### WebSocket
+
+- `WS /ws?token=<access_token>` — 与 REST **不同前缀**，用于任务进度订阅等（见 `backend/app/api/v1/websocket.py`）。
 
 ---
 

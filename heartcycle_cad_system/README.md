@@ -45,15 +45,17 @@
 
 | 模块 | 说明 |
 |------|------|
-| **认证与授权** | JWT 访问令牌 / 刷新令牌；管理员、医生、研究员、患者等多角色；路由级权限控制。 |
-| **风险预测** | 单样本预测、**服务端批量预测**、集成预测；风险等级与概率；可对接患者档案。 |
-| **模型训练** | **CSV 特征训练**（同步）；**H5 原始 ECG 训练**（异步任务 + 进度）；H5 自动标签流程；可选 **深度学习**、**多模态融合** 实验入口。 |
-| **模型与版本** | 磁盘 `model_id` 管理；**模型版本库**（上传 / 登记 / 激活）；训练完成后可发布到版本页。 |
-| **可解释性** | SHAP 单样本解释、全局特征重要性；与监测 / 训练结果联动展示。 |
-| **数据与信号** | CSV 上传；H5 批量上传与转换；H5 可视化；特征提取与选择相关 API。 |
-| **患者与报告** | 患者列表与详情（医护角色）；报告生成与导出（含 PDF 等能力，见前端实现）。 |
-| **系统能力** | 请求日志、**限流**、可选缓存与健康检查；管理端用户与审计；系统监控（管理员）。 |
-| **论文实验** | 论文实验相关页面与后端实验路由（需相应角色）。 |
+| **认证与授权** | JWT 访问 / 刷新；`GET/PUT /auth/me`；修改密码；**管理员**：用户列表、启停账号、**重置密码**、**审计日志**。 |
+| **个人中心** | 前端 **`/profile`**：登录用户维护资料与密码（与 `auth` 接口配合）。 |
+| **风险预测** | 单样本预测（`/monitor`）；**`/predict`** 重定向至监测；**服务端批量预测**；风险等级与概率；可对接患者档案。 |
+| **模型训练** | **`/train`**：CSV / H5 训练向导（同步/异步视流程而定）；**H5 自动标签**（`/train-h5-auto`）；**深度学习**、**多模态** 独立页面与 API。 |
+| **模型与版本** | 磁盘 `model_id` 管理；**模型版本库**（上传 / 登记 / 激活 / 对比 / 回滚）；训练结果可登记为版本。 |
+| **可解释性** | SHAP 单样本解释、全局特征重要性；与监测 / 训练 / 论文实验联动。 |
+| **数据与信号** | CSV 上传；**`/api/v1/h5/*`** 转换；**H5 可视化** API 与页面；**特征提取、特征选择、数据分析** 独立路由（`features` / `selection` / `analysis`）。 |
+| **患者与报告** | 患者 CRUD、随访与预测备注；报告生成、列表与下载（医护 / 研究员，以前端为准）。 |
+| **异步任务** | 应用启动时 **`Task queue`**：H5 训练、论文实验步骤等长任务可入队；**`/tasks/*`** 查询 / 取消 / 清理。 |
+| **系统能力** | 请求日志、**IP/用户限流**、**缓存统计与清理**、系统监控（CPU/内存/磁盘等）；管理仪表盘 **`/dashboard`**。 |
+| **论文实验** | 多步骤实验流水线页面与 **`/experiment/*`** API（管理员 / 研究员）。 |
 
 ---
 
@@ -65,8 +67,9 @@ flowchart LR
     Vue[Vue 3 + Element Plus]
   end
   subgraph api [FastAPI]
-    REST[REST API /api/v1]
+    REST[REST /api/v1]
     WS[WebSocket]
+    TQ[异步任务队列]
   end
   subgraph core [核心能力]
     ML[sklearn / XGB / LGBM]
@@ -86,7 +89,10 @@ flowchart LR
   REST --> NK
   REST --> DB
   REST --> FS
+  REST --> TQ
 ```
+
+启动时注册 **异步任务队列**（`start_task_queue`），与 H5 训练、实验等长耗时接口协同；关闭应用时优雅停止。
 
 ---
 
@@ -94,7 +100,7 @@ flowchart LR
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | Vue 3、Vue Router、Vue I18n、Element Plus、ECharts、vue-echarts、Axios |
+| 前端 | Vue 3、Vue Router、Vue I18n、Element Plus、ECharts、vue-echarts、Axios、**Vue CLI 5** |
 | 后端 | FastAPI、Uvicorn、Pydantic v2、SQLAlchemy |
 | 经典 ML | scikit-learn、imbalanced-learn（SMOTE 等）、XGBoost、LightGBM |
 | 深度学习 | TensorFlow、Keras（按需安装） |
@@ -111,7 +117,9 @@ heartcycle_cad_system/
 ├── backend/
 │   ├── algorithms/           # 算法库：预处理、特征、训练、深度学习、多模态等
 │   ├── app/
-│   │   ├── api/v1/         # REST 路由：auth、models、shap、patients、model_versions…
+│   │   ├── api/v1/         # REST：auth、data、features、selection、models、shap、h5、
+│   │   │                   # deep_learning、multimodal、analysis、patients、reports、
+│   │   │                   # model_versions、tasks、experiment、monitor、rate_limit、cache…
 │   │   ├── core/           # 配置、工具、异常
 │   │   ├── db/             # ORM 与迁移辅助
 │   │   ├── middleware/     # 日志、限流等
@@ -236,28 +244,31 @@ docker compose up -d --build
 
 ## 前端功能地图
 
+与 `frontend/src/router/index.js` 一致（`meta.requiresAuth` / `meta.roles` 控制访问）。
+
 | 路径 | 功能 |
 |------|------|
 | `/` | 首页 |
-| `/login` | 登录 |
+| `/login` | 登录（访客页） |
+| `/profile` | 个人中心：资料、密码等（已登录） |
 | `/monitor` | 单样本风险预测与解释 |
-| `/batch-predict` | 批量预测 |
-| `/train` | CSV / H5 训练向导 |
+| `/predict` | 重定向至 `/monitor`（兼容旧链接） |
+| `/batch-predict` | 批量预测（admin / doctor / researcher） |
+| `/train` | CSV / H5 训练向导（admin / doctor / researcher） |
 | `/train-h5-auto` | H5 自动标签训练 |
 | `/train-deep-learning` | 深度学习训练 |
 | `/train-multimodal` | 多模态训练 |
 | `/h5-converter` | H5 转换 |
 | `/h5-visualize` | H5 可视化 |
-| `/history` | 历史记录 |
+| `/history` | 预测历史（已登录） |
 | `/model-versions` | 模型版本管理 |
 | `/models/:id` | 模型详情 |
-| `/patients` | 患者列表 |
-| `/patients/:id` | 患者详情 |
-| `/reports` | 报告 |
-| `/thesis-experiment` | 论文实验 |
-| `/dashboard` | 管理仪表盘 |
-| `/system-monitor` | 系统监控 |
-| `/admin/users`、`/admin/audit-logs` | 用户与审计 |
+| `/patients`、`/patients/:id` | 患者列表与详情（admin / doctor） |
+| `/reports` | 报告（admin / doctor / researcher） |
+| `/thesis-experiment` | 论文实验（admin / researcher） |
+| `/dashboard` | 管理仪表盘（admin） |
+| `/system-monitor` | 系统监控（admin） |
+| `/admin/users`、`/admin/audit-logs` | 用户与审计（admin） |
 
 ---
 
@@ -267,17 +278,23 @@ docker compose up -d --build
 
 | 领域 | 方法 | 路径示例 | 说明 |
 |------|------|-----------|------|
-| 认证 | POST | `/auth/register`、`/auth/login`、`/auth/refresh` | 注册、登录、刷新令牌 |
-| 数据 | POST | `/data/upload` | 文件上传 |
-| 训练 | POST | `/train` | CSV 同步训练 |
-| 训练 | POST | `/train/h5` | 启动 H5 异步训练 |
-| 训练 | GET | `/train/h5/{task_id}` | 查询 H5 训练任务 |
-| 模型 | GET | `/models`、`/models/{model_id}` | 列表与详情 |
+| 认证 | POST / GET / PUT | `/auth/register`、`/auth/login`、`/auth/refresh`、`/auth/me`、`/auth/change-password`… | 注册登录、令牌、**当前用户**、改密；管理员用户与审计见 `/auth/users`、`/auth/audit-logs` |
+| 数据 | POST | `/data/upload` 等 | CSV / 数据上传 |
+| 特征 / 选择 / 分析 | * | `/features/*`、`/selection/*`、`/analysis/*` | 特征提取、特征选择、统计分析 |
+| 训练 | POST / GET | `/train`、`/train/h5`、`/train/h5/{task_id}` | CSV 与 H5 训练及任务查询 |
+| 模型 | GET 等 | `/models`、`/models/{model_id}` | 列表、详情、预测 |
 | 预测 | POST | `/predict`、`/predict/batch` | 单条与批量预测 |
 | SHAP | POST | `/shap/explain/instance`、`/shap/explain/global` | 局部 / 全局解释 |
-| 模型版本 | * | `/model-versions/*` | 版本 CRUD、从训练登记等 |
+| H5 | * | `/h5/*`（`h5_convert` 路由前缀） | 格式转换等 |
+| H5 可视化 | * | `/h5/...`（与 `h5_convert` 同属 `/api/v1/h5` 前缀下子路由，见 Swagger） | 波形与元数据 |
+| 深度学习 / 多模态 | * | `/deep-learning/*`、`/multimodal/*` | 对应前端训练页 |
+| 模型版本 | * | `/model-versions/*` | 版本 CRUD、对比、回滚等 |
 | 患者 / 报告 | * | `/patients/*`、`/reports/*` | 业务接口 |
-| 其它 | * | `/h5/*`、`/deep-learning/*`、`/multimodal/*`、`/experiment/*`、`/monitor/*`… | 见 Swagger |
+| 论文实验 | * | `/experiment/*` | 实验流水线 API |
+| 任务队列 | GET / POST | `/tasks/list`、`/tasks/{task_id}`、`/tasks/{task_id}/cancel`… | 异步任务状态与清理 |
+| 限流 / 缓存 / 监控 | * | `/rate-limit/*`、`/cache/*`、`/monitor/*` | 运维与观测 |
+| WebSocket | WS | `/ws?token=<access_token>` | 任务进度订阅等（**不在** `/api/v1` 前缀下） |
+| 其它 | — | — | **完整 OpenAPI：`/docs` 与 `/redoc`** |
 
 完整列表与字段说明：**[docs/guides/API.md](./docs/guides/API.md)**。
 

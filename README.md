@@ -17,6 +17,6 @@ git clone https://github.com/wenjinqing/HeartCycle-CAD-System.git
 cd HeartCycle-CAD-System/heartcycle_cad_system
 ```
 
-后续安装依赖、配置 `.env`、启动前后端等步骤，均以 **`heartcycle_cad_system/`** 为当前目录，见 [heartcycle_cad_system/README.md](heartcycle_cad_system/README.md) 中的「快速开始」与「Docker 部署」。
+后续安装依赖、配置 `.env`、启动前后端等步骤，均以 **`heartcycle_cad_system/`** 为当前目录，见 [heartcycle_cad_system/README.md](heartcycle_cad_system/README.md) 中的「快速开始」与「Docker 部署」。开发时前端一般为 **http://localhost:8080**（Vue CLI），后端常见 **8000** 或由 `scripts/start_backend.py` 使用 **8009**（以前端 `backendDetector` 与终端日志为准）。
 
 > 原始数据目录 `heartcycle/`（若本地存在）默认不入库；仅作本地分析时使用。
