@@ -357,8 +357,8 @@ npm run build
 
 ## 📞 联系方式
 
-- **项目主页**: https://github.com/yourusername/heartcycle-cad-system
-- **问题反馈**: https://github.com/yourusername/heartcycle-cad-system/issues
+- **项目主页**: https://github.com/wenjinqing/HeartCycle-CAD-System
+- **问题反馈**: https://github.com/wenjinqing/HeartCycle-CAD-System/issues
 - **邮箱**: your.email@example.com
 
 ## 📄 许可证

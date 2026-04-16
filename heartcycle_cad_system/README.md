@@ -156,8 +156,8 @@ heartcycle_cad_system/
 ### 1. 获取代码
 
 ```bash
-git clone <你的仓库 URL>.git
-cd <仓库目录>/heartcycle_cad_system
+git clone https://github.com/wenjinqing/HeartCycle-CAD-System.git
+cd HeartCycle-CAD-System/heartcycle_cad_system
 ```
 
 ### 2. 配置环境变量

@@ -13,8 +13,8 @@
 ## 克隆后进入项目根
 
 ```bash
-git clone <你的仓库 URL>.git
-cd <本地仓库目录>/heartcycle_cad_system
+git clone https://github.com/wenjinqing/HeartCycle-CAD-System.git
+cd HeartCycle-CAD-System/heartcycle_cad_system
 ```
 
 后续安装依赖、配置 `.env`、启动前后端等步骤，均以 **`heartcycle_cad_system/`** 为当前目录，见 [heartcycle_cad_system/README.md](heartcycle_cad_system/README.md) 中的「快速开始」与「Docker 部署」。

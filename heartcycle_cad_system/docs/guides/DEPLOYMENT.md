@@ -60,8 +60,8 @@ docker-compose --version
 ### 2. 克隆项目
 
 ```bash
-git clone https://github.com/yourusername/heartcycle-cad-system.git
-cd heartcycle-cad-system
+git clone https://github.com/wenjinqing/HeartCycle-CAD-System.git
+cd HeartCycle-CAD-System/heartcycle_cad_system
 ```
 
 ### 3. 配置环境变量
@@ -723,7 +723,7 @@ sudo systemctl restart heartcycle-backend
 如遇到问题，请：
 1. 查看日志文件
 2. 参考本文档的故障排查部分
-3. 提交Issue: https://github.com/yourusername/heartcycle-cad-system/issues
+3. 提交Issue: https://github.com/wenjinqing/HeartCycle-CAD-System/issues
 4. 发送邮件: support@your-domain.com
 
 ---
