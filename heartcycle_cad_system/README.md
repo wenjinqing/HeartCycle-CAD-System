@@ -15,6 +15,8 @@
 
 **English (short):** HeartCycle CAD System is a full-stack web application for coronary artery disease risk prediction from tabular clinical/HRV features or raw ECG (H5). It ships with JWT auth, role-based access, classical ML and optional deep / multimodal workflows, SHAP explanations, model registry, batch prediction, and deployment-oriented Docker assets.
 
+> **GitHub 仓库首页**展示的是上一级 [根目录 README](../README.md)。下文中的命令、`./docs/...` 等相对路径均以 **`heartcycle_cad_system/`** 为当前工作目录（请先 `cd …/heartcycle_cad_system` 再执行）。
+
 ---
 
 ## 目录
