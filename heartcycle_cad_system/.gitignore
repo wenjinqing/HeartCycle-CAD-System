@@ -92,4 +92,24 @@ data/cad_dataset_*.csv
 # Node
 node_modules/
 
+# 嵌套重复整包（保留为 .bak 以便回滚，但不进版本库）
+heartcycle_cad_system.bak/
+heartcycle_cad_system/
+
+# 项目运行产物（一律不进库）
+test_results/
+test_data_legacy/
+feature_analysis/
+scripts/logs/
+scripts/results/
+scripts/best_model.h5
+scripts/experiment_report_*.txt
+
+# 老版前端构建产物
+frontend/dist/
+
+# 系统垃圾文件
+nul
+
+
 
