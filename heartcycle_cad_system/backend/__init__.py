@@ -1,3 +1,0 @@
-"""HeartCycle CAD System Backend"""
-
-
