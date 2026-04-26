@@ -1,5 +1,19 @@
-"""
-多模态融合模型服务
+"""HeartCycle H5 多模态融合模型服务（遗留接口）。
+
+⚠️ 学术合规说明
+================
+本服务面向「HeartCycle 私有 H5 数据 + 用户提供标签 CSV」的训练场景。
+但项目随附的 ``data/raw/59146237_SubjectMetadata.csv`` 中 **37 条记录全为
+``Healthy``**，没有 CAD 阳性样本——单类数据无法做二分类，``strict_labels=True``
+（默认）会直接抛错保护学术诚信。
+
+如果你**没有**真实 H5 + CAD 二分类标签，请改用基于 PTB-XL 公开数据集的新流程：
+
+* 训练：``scripts/train_ptbxl_ecg.py``
+* 服务：``app/services/ptbxl_multimodal_service.py``
+* 路由：``/api/v1/ptbxl-multimodal/*``
+
+本文件保留是为了向后兼容，未来如果你拿到真实带 CAD 标签的 H5，仍可继续使用。
 """
 import sys
 import os
@@ -116,12 +130,17 @@ def _hrv_dict_to_vector(hrv_dict: Optional[Dict]) -> np.ndarray:
 # ─── 标签生成 ─────────────────────────────────────────────────────────────────
 
 def _generate_demo_labels(n: int, cad_ratio: float = 0.35, seed: int = 42) -> np.ndarray:
-    """若 H5 文件无真实标签，自动生成演示标签（约 35% 阳性）。"""
+    """
+    若 H5 文件无真实标签，按固定种子生成演示标签（约 35% 阳性）。
+
+    ⚠️ 学术风险：用随机标签训练得到的"准确率"完全没有医学意义。
+    生产 / 论文场景必须传 ``strict_labels=True``（默认），让缺标签直接抛错。
+    """
     rng = np.random.RandomState(seed)
     labels = (rng.rand(n) < cad_ratio).astype(np.int32)
     logger.warning(
-        f"使用演示标签（{int(labels.sum())} 阳性 / {n} 总计），"
-        "正式使用请提供真实标签文件。"
+        f"⚠️ 使用随机演示标签（{int(labels.sum())} 阳性 / {n} 总计，seed={seed}）。"
+        " 这是 strict_labels=False 的兜底行为，结果不能用于论文 / 临床决策。"
     )
     return labels
 
@@ -292,6 +311,7 @@ class MultiModalService:
         fusion_mode: str = "interactive",
         use_class_weights: bool = True,
         random_state: int = 42,
+        strict_labels: bool = True,
     ) -> Dict:
         """
         从 H5 文件列表训练多模态融合模型。
@@ -310,6 +330,10 @@ class MultiModalService:
         fusion_mode : concat（原版拼接）| interactive（HRV-CNN Hadamard 交互）
         use_class_weights : 是否对训练集使用 balanced sample_weight
         random_state : 划分与 TensorFlow 随机种子，便于复现
+        strict_labels : 默认 True。缺 label_file / 全单类 / 解析失败时直接抛错，
+                       避免训练流水线在没有真实标签的情况下静默回退到随机演示标签
+                       （这是论文报告 / 临床上线前不可接受的"假准确率"）。
+                       仅在「快速冒烟测试管道」时显式设为 False，结果禁用于论文。
         """
         from algorithms.multimodal_fusion import MultiModalTrainer
 
@@ -343,21 +367,47 @@ class MultiModalService:
         logger.info(f"有效样本数: {n}")
 
         # ── 2. 标签 ────────────────────────────────────────────────────────────
+        # 学术 / 临床合规优先：默认 strict_labels=True，缺真实标签时直接报错。
         label_source = "demo_random"
         if label_file:
-            file_to_label = load_h5_label_mapping(label_file)
-            labels = np.array(
-                [label_for_h5_path(fp, file_to_label) for fp in valid_files],
-                dtype=np.int32,
-            )
-            n_pos = int(labels.sum())
-            if n_pos == 0 or n_pos == n:
-                logger.warning("标签全为同一类，切换到演示标签")
+            try:
+                file_to_label = load_h5_label_mapping(label_file)
+            except Exception as e:
+                if strict_labels:
+                    raise ValueError(
+                        f"标签 CSV 解析失败：{e}。"
+                        " strict_labels=True 下不允许回退到随机标签。"
+                        " 请检查 label_file 列名与受试者匹配；如需快速跑通管道请显式传 strict_labels=False。"
+                    ) from e
+                logger.warning(f"标签 CSV 解析失败但 strict_labels=False，回退随机：{e}")
                 labels = _generate_demo_labels(n)
-                label_source = "demo_fallback_single_class"
+                label_source = "demo_fallback_parse_error"
             else:
-                label_source = "csv"
+                labels = np.array(
+                    [label_for_h5_path(fp, file_to_label) for fp in valid_files],
+                    dtype=np.int32,
+                )
+                n_pos = int(labels.sum())
+                if n_pos == 0 or n_pos == n:
+                    msg = (
+                        f"标签全为同一类（{n_pos}/{n} 阳性），无法训练二分类模型。"
+                        " 请检查标签 CSV 与 H5 路径 / 受试者 ID 的匹配关系。"
+                    )
+                    if strict_labels:
+                        raise ValueError(msg)
+                    logger.warning(msg + "（strict_labels=False，回退随机）")
+                    labels = _generate_demo_labels(n)
+                    label_source = "demo_fallback_single_class"
+                else:
+                    label_source = "csv"
         else:
+            if strict_labels:
+                raise ValueError(
+                    "未提供 label_file。strict_labels=True（默认）下不允许使用随机演示标签。"
+                    " 请提供 H5 文件名 / 路径 → 0/1 标签的 CSV"
+                    "（列名兼容 file_path, label 或 SubjectMetadata 的 File_Name, Disease_Status）。"
+                    " 仅在快速冒烟测试时显式传 strict_labels=False（结果禁用于论文 / 临床）。"
+                )
             labels = _generate_demo_labels(n)
 
         # ── 3. 准备数据集 ─────���────────────────────────────────────────────────

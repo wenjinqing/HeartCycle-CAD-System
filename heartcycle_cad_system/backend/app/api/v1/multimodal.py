@@ -43,6 +43,13 @@ class TrainMultiModalRequest(BaseModel):
         ge=0,
         description="数据划分与 TensorFlow 随机种子，便于复现实验",
     )
+    strict_labels: bool = Field(
+        default=True,
+        description=(
+            "默认 True：缺 label_file / 标签解析失败 / 全单类时直接 400 报错，"
+            "避免静默使用随机演示标签污染论文结果。仅冒烟测试时设为 False。"
+        ),
+    )
 
 
 class PredictFromH5Request(BaseModel):
@@ -87,6 +94,13 @@ class MultiModalAblationRequest(BaseModel):
         default=False,
         description="为 True 时将完整 JSON 写入 MODELS_DIR（便于留档写论文）",
     )
+    strict_labels: bool = Field(
+        default=True,
+        description=(
+            "默认 True：缺标签 / 标签全单类 / 解析失败时直接报错，"
+            "防止消融实验拿随机标签产生看起来合理的对比结论。"
+        ),
+    )
 
 
 # ─── 训练 ─────────────────────────────────────────────────────────────────────
@@ -124,6 +138,7 @@ async def train_multimodal(
             fusion_mode=request.fusion_mode,
             use_class_weights=request.use_class_weights,
             random_state=request.random_state,
+            strict_labels=request.strict_labels,
         )
         return APIResponse(
             success=True,
@@ -161,6 +176,7 @@ def run_multimodal_ablation(
             configs=request.configs,
             include_sample_weight_ablation=request.include_sample_weight_ablation,
             persist=request.persist,
+            strict_labels=request.strict_labels,
         )
         return APIResponse(
             success=True,

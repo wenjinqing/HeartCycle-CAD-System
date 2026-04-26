@@ -14,7 +14,7 @@ from app.core.logger import logger, log_with_context
 from app.core.exceptions import BaseAPIException
 from app.middleware.logging import LoggingMiddleware, performance_metrics
 from app.middleware.rate_limit import RateLimitMiddleware
-from app.api.v1 import data, features, selection, models, shap, h5_convert, auth, websocket, deep_learning, analysis, patients, reports, model_versions, rate_limit, cache, monitor, tasks, experiment, h5_visualize, multimodal
+from app.api.v1 import data, features, selection, models, shap, h5_convert, auth, websocket, deep_learning, analysis, patients, reports, model_versions, rate_limit, cache, monitor, tasks, experiment, h5_visualize, multimodal, clinical_cad, ptbxl_multimodal
 from app.db.base import (
     engine,
     Base,
@@ -183,6 +183,8 @@ app.include_router(tasks.router, prefix=settings.API_V1_PREFIX, tags=["任务队
 app.include_router(experiment.router, prefix=settings.API_V1_PREFIX, tags=["论文实验"])
 app.include_router(h5_visualize.router, prefix=settings.API_V1_PREFIX, tags=["H5可视化"])
 app.include_router(multimodal.router, prefix=settings.API_V1_PREFIX, tags=["多模态融合"])
+app.include_router(clinical_cad.router, prefix=settings.API_V1_PREFIX, tags=["真实数据 CAD 推理"])
+app.include_router(ptbxl_multimodal.router, prefix=settings.API_V1_PREFIX, tags=["PTB-XL 多模态融合"])
 
 
 @app.on_event("startup")

@@ -74,6 +74,7 @@ class MultiModalAblationService:
         configs: Optional[List[str]] = None,
         include_sample_weight_ablation: bool = True,
         persist: bool = False,
+        strict_labels: bool = True,
     ) -> Dict[str, Any]:
         import json
 
@@ -98,16 +99,34 @@ class MultiModalAblationService:
             )
 
         if label_file:
-            file_to_label = load_h5_label_mapping(label_file)
-            labels = np.array(
-                [label_for_h5_path(fp, file_to_label) for fp in valid_files],
-                dtype=np.int32,
-            )
-            n_pos = int(labels.sum())
-            if n_pos == 0 or n_pos == n:
-                logger.warning("标签全为一类，改用演示标签")
+            try:
+                file_to_label = load_h5_label_mapping(label_file)
+            except Exception as e:
+                if strict_labels:
+                    raise ValueError(
+                        f"标签 CSV 解析失败：{e}。strict_labels=True 下不允许回退到随机标签。"
+                    ) from e
+                logger.warning("标签 CSV 解析失败但 strict_labels=False，回退随机：%s", e)
                 labels = _generate_demo_labels(n)
+            else:
+                labels = np.array(
+                    [label_for_h5_path(fp, file_to_label) for fp in valid_files],
+                    dtype=np.int32,
+                )
+                n_pos = int(labels.sum())
+                if n_pos == 0 or n_pos == n:
+                    msg = f"标签全为同一类（{n_pos}/{n}），消融实验需二分类样本。"
+                    if strict_labels:
+                        raise ValueError(msg)
+                    logger.warning(msg + "（strict_labels=False，回退随机）")
+                    labels = _generate_demo_labels(n)
         else:
+            if strict_labels:
+                raise ValueError(
+                    "未提供 label_file。strict_labels=True（默认）下消融实验不允许使用随机演示标签——"
+                    " 否则各配置之间的 AUC/F1 对比毫无意义。"
+                    " 仅冒烟测试时显式传 strict_labels=False。"
+                )
             labels = _generate_demo_labels(n)
 
         X_hrv = np.stack(hrv_list, axis=0).astype(np.float32)
