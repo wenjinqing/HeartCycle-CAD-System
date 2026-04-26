@@ -40,7 +40,6 @@ ENV/
 # 环境变量
 .env
 .env.local
-.env.*.local
 
 # 数据文件
 data/raw/*
@@ -55,6 +54,8 @@ data/models/*
 # 结果文件
 results/*
 !results/.gitkeep
+!results/experiments/.gitkeep
+!results/visualizations/.gitkeep
 
 # 日志
 logs/
@@ -74,43 +75,21 @@ Thumbs.db
 htmlcov/
 .pytest_cache/
 
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# 本地注册/测试凭据（切勿提交）
+temp_register.json
 
-# Windows 错误文件
-nul
-
-# Claude CLI
-.claude/
-
-# 测试结果和分析输出
-test_results/
-feature_analysis/
-
-# 原始测量数据与数据集目录（仅本地使用，不入库）
-heartcycle/
-
-# 运行时生成的文件
-run_tests.py
-test_api_endpoints.py
-verify_cleanup.py
-clean_shap.py
-
-# 前端构建输出
-frontend/dist/
-
-# 数据目录下的所有文件（保留目录结构）
+# 运行时与本地数据目录（仅忽略项目根下产物目录，勿用 models/ 以免匹配 app/models）
 backend/data/
-data/raw/
-data/processed/
-data/features/
-data/models/
+data/realdata/
+/models/
+/reports/
 
-# 毕业论文工作区（含 Word、图表与示例表，默认不入库；需要时用 git add -f 挑选）
-论文/
+# 大体积或可能含真实信息的导出
+scripts/*.h5
+scripts/experiment_report_*.txt
+data/cad_dataset_*.csv
 
-# 测试数据（含 H5、CSV、测试账号 JSON 等，默认不入库）
-heartcycle_cad_system/测试数据/
+# Node
+node_modules/
+
+
