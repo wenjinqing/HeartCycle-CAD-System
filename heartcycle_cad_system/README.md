@@ -293,6 +293,8 @@ docker compose up -d --build
 | 论文实验 | * | `/experiment/*` | 实验流水线 API |
 | 任务队列 | GET / POST | `/tasks/list`、`/tasks/{task_id}`、`/tasks/{task_id}/cancel`… | 异步任务状态与清理 |
 | 限流 / 缓存 / 监控 | * | `/rate-limit/*`、`/cache/*`、`/monitor/*` | 运维与观测 |
+| **真实数据 CAD** | GET / POST | `/clinical-cad/{status,schema,predict,predict/batch}` | 直接调用 `train_zalizadeh.py` 训出的真实临床模型，输入是**原始字段字典**（医生友好），服务端复刻特征工程 |
+| **PTB-XL 多模态** | GET / POST | `/ptbxl-multimodal/{status,fusion-methods,predict}` | ECG 波形 (PTB-XL 1D-ResNet) + 临床表格 (Z-Alizadeh) 的 late fusion；详见 [docs/PTBXL_PIPELINE.md](./docs/PTBXL_PIPELINE.md) |
 | WebSocket | WS | `/ws?token=<access_token>` | 任务进度订阅等（**不在** `/api/v1` 前缀下） |
 | 其它 | — | — | **完整 OpenAPI：`/docs` 与 `/redoc`** |
 
@@ -306,9 +308,94 @@ docker compose up -d --build
 
 特征文件需包含与系统约定一致的列（如年龄、性别、身高、体重及 HRV 相关字段等）。具体列说明见前端上传提示与 **[docs/guides/DATA_LOCATION_GUIDE.md](./docs/guides/DATA_LOCATION_GUIDE.md)**。
 
-### H5 ECG
+### Z-Alizadeh Sani 真实临床数据集 ⭐ 推荐路径
 
-支持批量上传与转换；训练流程从原始波形提取 HRV 等特征后再进入经典 ML 管线。详见 **重要提示** 与 H5 相关 notes：`docs/notes/`、`docs/guides/README_重要提示.md`。
+随仓库附带的真实数据：`data/raw/cad_features.csv`（303×78）+ `data/raw/cad_labels.csv`，
+覆盖 78 个原始临床列（人口学、生化、ECG、心血管症状等）。
+
+**一行训练，自动出最优模型 + 报告 + 可视化**：
+
+```powershell
+python scripts/train_zalizadeh.py
+```
+
+会做：
+
+1. 17 种临床先验特征工程（脂质比、NLR、年龄×风险因子交互、BMI/年龄分箱、胸痛/ECG 综合分等）
+2. Optuna 50 trials 调 LightGBM
+3. 训 4 基模型 + Stacking + Voting + 概率校准 + Youden's J 阈值优化
+4. 输出：
+   - `data/models/zalizadeh_best.joblib`（默认最优 RandomForest，AUC≈0.90，Sens≈0.97）
+   - `results/zalizadeh_results.{json,md}` 全部对比表
+   - `results/zalizadeh_{roc,confusion,shap_top15}.png` 可视化
+
+模型一旦落到 `data/models/`，FastAPI 端会**懒加载**——前端直接调用 `/api/v1/clinical-cad/predict`：
+
+```bash
+curl -X POST http://localhost:8000/api/v1/clinical-cad/predict \
+  -H "Content-Type: application/json" \
+  -d '{"raw_features": {"Age": 58, "BP": 145, "LDL": 142, "HDL": 38, "Typical Chest Pain": 1, "DM": 1, "HTN": 1, "FH": 1}}'
+```
+
+返回示例：
+
+```json
+{
+  "success": true,
+  "data": {
+    "prediction": 1,
+    "p_positive": 0.84,
+    "risk_level": "high",
+    "threshold": 0.495,
+    "model": "RandomForest"
+  }
+}
+```
+
+> **缺字段允许**：服务端会用训练集中位数兜底；建议前端先调 `/clinical-cad/schema` 拿到完整字段元数据驱动表单。
+
+### H5 ECG（多模态）
+
+支持批量上传与转换；训练流程从原始波形提取 HRV 等特征后再进入经典 ML 管线。
+详见 **重要提示** 与 H5 相关 notes：`docs/notes/`、`docs/guides/README_重要提示.md`。
+
+> **学术合规警告**：多模态训练 / 消融的 `strict_labels` 默认 **True**。如果不传
+> `label_file` 或标签 CSV 解析失败，端点会直接 400 报错，不再静默回退到随机演示标签。
+> 仅在「冒烟测试管道」时显式传 `strict_labels=False`，且**禁止用其结果写论文 / 上线临床**。
+
+### PTB-XL 公开多模态 ECG 数据集 ⭐ 多模态推荐路径
+
+**为什么需要这个**：仓库附带的 HeartCycle SubjectMetadata 中 37 条记录全是
+`Healthy`，没有 CAD 阳性样本，单类数据无法做二分类；Z-Alizadeh 又只有表格、
+没有 ECG 波形——两者样本不重叠，所以 H5 路径**根本拼不出真实多模态 CAD 标签**。
+
+引入 PhysioNet **PTB-XL v1.0.3**（21,799 条 12 导联 ECG，CC-BY 4.0）解决：
+
+```bash
+# 1. 下载（约 1.7 GB；只要 100 Hz 子集 ≈ 800 MB）
+python scripts/download_ptbxl.py --mode python --resolution 100
+
+# 2. 预处理：把 SCP-ECG 码聚合为 MI/CAD 二分类标签
+python scripts/preprocess_ptbxl.py --label-strategy mi_vs_norm
+
+# 3. 训练 1D-ResNet ECG → CAD（30 epochs ≈ 1-2 小时 GPU / 5-10 小时 CPU）
+python scripts/train_ptbxl_ecg.py --epochs 30
+
+# 4.（可选）HeartCycle 健康人 ECG 自监督预训练，再迁移到 PTB-XL
+python scripts/pretrain_heartcycle_ssl.py --use-ptbxl-norm --epochs 30
+python scripts/train_ptbxl_ecg.py --pretrained data/models/ssl_heartcycle_encoder.h5 \
+    --freeze-backbone-epochs 5 --epochs 25
+
+# 5. 烟雾测试（mock 数据，不联网，几秒钟）
+python scripts/smoke_test_ptbxl_pipeline.py
+```
+
+训练产物 `data/models/ptbxl_ecg_resnet1d_best.h5` 自动被
+`/api/v1/ptbxl-multimodal/predict` 端点懒加载，与 Z-Alizadeh 表格分支做
+late fusion（5 种策略：mean / weighted / logit_mean / max / min）。
+
+**完整流程文档**：[docs/PTBXL_PIPELINE.md](./docs/PTBXL_PIPELINE.md)
+（含数据集对比、论文写作建议、引用 BibTeX、故障排查表）。
 
 ---
 
